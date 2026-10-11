@@ -1,0 +1,1552 @@
+<!-- ============================================================
+     時間貯金タイマー  ―  画面の骨組み
+     include('css') / include('js') のところに css.html / js.html の中身が入る
+     ============================================================ -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>時間貯金タイマー</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#12a08c">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="時間貯金">
+  <style>
+/* ============================================================
+   時間貯金タイマー  ―  見た目（スマホ基準。広い画面だけPC用に変える）
+   ============================================================ */
+
+:root{
+  --bg:#f3f6f6;
+  --card:#ffffff;
+  --line:#dfe6e6;
+  --text:#1b2424;
+  --muted:#667373;
+  --primary:#12a08c;      /* 時間＝ミントグリーン */
+  --primary-dark:#0c7d6d;
+  --primary-soft:#e3f5f2;
+  --ok:#1f9d55;
+  --warn:#d98a00;
+  --danger:#d64545;
+  --plus:#1f9d55;
+  --minus:#d0482c;
+  --radius:12px;
+  --tap:44px;
+}
+
+*{box-sizing:border-box;}
+html,body{margin:0; padding:0;}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;
+  background:var(--bg); color:var(--text);
+  font-size:15px; line-height:1.6; -webkit-text-size-adjust:100%;
+  -webkit-tap-highlight-color:transparent;
+}
+.hidden{display:none !important;}
+.muted{color:var(--muted); font-size:13px;}
+.error{color:var(--danger); font-size:13px; min-height:1.2em; margin:4px 0;}
+h1{font-size:20px; margin:0 0 8px;}
+h2{font-size:15px; margin:0 0 10px; font-weight:700;}
+.plus{color:var(--plus);}
+.minus{color:var(--minus);}
+.num{font-variant-numeric:tabular-nums;}
+
+/* ── 入口の画面 ───────────────── */
+.gate{
+  position:fixed; inset:0; background:var(--bg); z-index:50;
+  display:flex; align-items:center; justify-content:center; padding:20px; overflow-y:auto;
+}
+.gate-box{
+  background:var(--card); border-radius:var(--radius); padding:28px 22px;
+  width:100%; max-width:380px; text-align:center; box-shadow:0 2px 12px rgba(0,0,0,.06);
+}
+.gate-box .form{text-align:left; margin-top:16px;}
+.logo{font-size:44px; line-height:1; margin-bottom:6px;}
+.auth-switch{margin-top:14px;}
+.auth-switch a{color:var(--primary-dark); font-weight:700; text-decoration:none;}
+.who-list{display:flex; flex-direction:column; gap:8px; margin-top:16px;}
+.who-btn{
+  border:1px solid var(--line); background:#fff; border-radius:10px;
+  padding:14px; font-size:16px; font-weight:700; cursor:pointer; min-height:var(--tap);
+}
+.who-btn:hover{border-color:var(--primary);}
+.spinner{
+  width:28px; height:28px; margin:0 auto 12px;
+  border:3px solid var(--line); border-top-color:var(--primary);
+  border-radius:50%; animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ── 上のバー・タブ ───────────────── */
+.topbar{
+  position:sticky; top:0; z-index:20;
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:10px 14px; padding-top:calc(10px + env(safe-area-inset-top));
+  background:var(--card); border-bottom:1px solid var(--line);
+}
+.brand{font-weight:800; color:var(--primary-dark);}
+.me-chip{
+  border:1px solid var(--line); background:#fff; border-radius:999px;
+  padding:6px 12px; font-weight:700; cursor:pointer; font-size:13px;
+}
+.tabs{display:none;}
+.bottomnav{
+  position:fixed; left:0; right:0; bottom:0; z-index:20;
+  display:flex; background:var(--card); border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.bottomnav button{
+  flex:1; border:0; background:none; padding:8px 2px 6px; position:relative;
+  font-size:10.5px; color:var(--muted); cursor:pointer; min-height:var(--tap);
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+}
+.bottomnav button .ico{font-size:19px; line-height:1;}
+.bottomnav button.active{color:var(--primary-dark); font-weight:700;}
+.dot{
+  position:absolute; top:4px; left:calc(50% + 8px); min-width:16px; height:16px; padding:0 4px;
+  border-radius:999px; background:var(--danger); color:#fff; font-size:10px; line-height:16px; font-weight:700;
+}
+
+main{padding:12px 12px 90px; max-width:900px; margin:0 auto;}
+.card{
+  background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+  padding:14px; margin-bottom:12px;
+}
+.card-head{display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:10px;}
+.card-head h2{margin:0;}
+
+/* ── 貯金の表示 ───────────────── */
+.bank-mini{
+  display:flex; justify-content:space-between; align-items:center; gap:8px;
+  padding:14px 16px; border-radius:var(--radius); margin-bottom:12px;
+  background:linear-gradient(135deg,var(--primary),var(--primary-dark)); color:#fff;
+}
+.bank-mini .label{font-size:12.5px; opacity:.9; font-weight:700;}
+.bank-mini .val{font-size:28px; font-weight:800; font-variant-numeric:tabular-nums; line-height:1.2;}
+.bank-mini .side{text-align:right; font-size:12.5px; line-height:1.7;}
+.bank-mini .side b{font-variant-numeric:tabular-nums;}
+.stat-row{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px;}
+.stat{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px; text-align:center;}
+.stat .k{font-size:11.5px; color:var(--muted); font-weight:700;}
+.stat .v{font-size:17px; font-weight:800; font-variant-numeric:tabular-nums;}
+
+/* ── ルーチン一覧 ───────────────── */
+.routine-list{display:flex; flex-direction:column; gap:8px;}
+.routine{
+  display:flex; align-items:center; gap:12px; text-align:left; width:100%;
+  border:1px solid var(--line); background:#fff; border-radius:12px; padding:14px; cursor:pointer;
+}
+.routine:hover{border-color:var(--primary);}
+.routine .play{
+  flex:0 0 auto; width:44px; height:44px; border-radius:50%; background:var(--primary); color:#fff;
+  display:flex; align-items:center; justify-content:center; font-size:18px;
+}
+.routine .name{font-weight:800; font-size:16px;}
+.routine .sub{font-size:12.5px; color:var(--muted);}
+.switch{display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; color:var(--muted); cursor:pointer;}
+.switch input{width:18px; height:18px; margin:0;}
+
+/* ── 実行中の画面 ───────────────── */
+.run{
+  position:fixed; inset:0; z-index:40; background:#0f2a27; color:#fff;
+  display:flex; flex-direction:column;
+  padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+}
+.run-top{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:12px 14px;}
+.run-top .btn{background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.2); color:#fff;}
+.run-title{font-weight:700; font-size:14px; opacity:.85; text-align:center; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.run-progress{height:5px; background:rgba(255,255,255,.12); margin:0 14px; border-radius:999px; overflow:hidden;}
+.run-progress div{height:100%; background:var(--primary); width:0; transition:width .3s;}
+.run-body{flex:1; overflow-y:auto; padding:18px 18px 24px; display:flex; flex-direction:column; align-items:center; text-align:center;}
+.run-count{font-size:13px; opacity:.7; font-weight:700;}
+.run-step{font-size:30px; font-weight:800; line-height:1.3; margin:6px 0 2px; word-break:break-word;}
+.run-target{font-size:14px; opacity:.75;}
+.run-clock{
+  font-size:min(26vw,120px); font-weight:800; font-variant-numeric:tabular-nums; line-height:1.1;
+  margin:18px 0 6px; letter-spacing:-2px;
+}
+.run-clock.over{color:#ff8a73;}
+.run-clock.hidden-mode{font-size:min(14vw,60px); letter-spacing:0; opacity:.55; animation:breathe 2.4s ease-in-out infinite;}
+.run-clock.paused{opacity:.4;}
+@keyframes breathe{50%{opacity:.25;}}
+.run-saved{font-size:14px; font-weight:700; min-height:1.6em;}
+.run-next{
+  width:100%; max-width:420px; margin:18px 0 12px; padding:22px 16px; border:0; border-radius:18px;
+  background:var(--primary); color:#fff; font-size:22px; font-weight:800; cursor:pointer;
+  box-shadow:0 6px 0 var(--primary-dark);
+}
+.run-next:active{transform:translateY(4px); box-shadow:0 2px 0 var(--primary-dark);}
+.run-sub{display:flex; gap:8px; width:100%; max-width:420px;}
+.run-sub .btn{flex:1; background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.2); color:#fff;}
+.run-upcoming{width:100%; max-width:420px; margin-top:20px; text-align:left; font-size:13px;}
+.run-upcoming .row{display:flex; justify-content:space-between; padding:6px 2px; border-bottom:1px solid rgba(255,255,255,.08); opacity:.7;}
+.run-upcoming .row.done{opacity:.45;}
+.done-big{font-size:46px; font-weight:800; font-variant-numeric:tabular-nums; margin:8px 0;}
+.done-table{width:100%; max-width:420px; text-align:left; margin:12px 0 18px; font-size:14px;}
+.done-table .row{display:flex; gap:8px; justify-content:space-between; padding:8px 2px; border-bottom:1px solid rgba(255,255,255,.1);}
+.done-table .reason{font-size:12px; opacity:.7;}
+.run .plus{color:#7de2c3;}
+.run .minus{color:#ff8a73;}
+
+/* ── 理由のチップ ───────────────── */
+.chips{display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 12px;}
+.chip{
+  border:1px solid var(--line); background:#fff; border-radius:999px; padding:8px 14px;
+  font-size:14px; font-weight:700; cursor:pointer;
+}
+.chip.active{background:var(--primary); border-color:var(--primary); color:#fff;}
+
+/* ── メンバー切替・期間切替 ───────────────── */
+.member-seg{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px;}
+.member-seg button{
+  flex:1 1 auto; min-width:70px; border:1px solid var(--line); background:#fff;
+  border-radius:10px; padding:9px 8px; font-weight:700; cursor:pointer; min-height:var(--tap);
+}
+.member-seg button.active{background:var(--primary); border-color:var(--primary); color:#fff;}
+.member-seg.small button{flex:0 0 auto; min-width:0; padding:6px 14px; min-height:34px; font-size:13px;}
+
+/* ── 交換先タイル ───────────────── */
+.tile-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:8px;}
+.tile{
+  border:1px solid var(--line); background:#fff; border-radius:12px;
+  padding:14px 10px; text-align:center; cursor:pointer; min-height:84px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+}
+.tile:hover{border-color:var(--primary);}
+.tile:disabled{opacity:.45; cursor:not-allowed;}
+.tile .name{font-weight:800; font-size:14.5px;}
+.tile .rate{font-size:12.5px; color:var(--muted);}
+
+/* ── リスト ───────────────── */
+.list{display:flex; flex-direction:column; gap:6px;}
+.list-item{
+  display:flex; justify-content:space-between; align-items:center; gap:10px;
+  padding:10px 12px; border:1px solid var(--line); border-radius:9px; background:#fff;
+}
+.list-item.col{flex-direction:column; align-items:stretch;}
+.list-item .main{min-width:0; flex:1;}
+.list-item .title{font-weight:700; font-size:14px;}
+.list-item .sub{font-size:12px; color:var(--muted);}
+.list-item .actions{display:flex; gap:6px; flex:0 0 auto; flex-wrap:wrap; justify-content:flex-end;}
+.list-head{display:flex; justify-content:space-between; align-items:center; gap:10px; cursor:pointer;}
+.steps-mini{margin-top:8px; font-size:12.5px; border-top:1px dashed var(--line); padding-top:6px;}
+.steps-mini .row{display:flex; justify-content:space-between; gap:8px; padding:2px 0;}
+.steps-mini .reason{color:var(--muted); font-size:11.5px; padding-left:10px;}
+.empty{color:var(--muted); font-size:13px; text-align:center; padding:10px;}
+.val{font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap;}
+.badge{display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap;}
+.badge.pending{background:#fdf1da; color:var(--warn);}
+.badge.ok{background:#e6f4ea; color:var(--ok);}
+.badge.ng{background:#f8e5e5; color:var(--danger);}
+.badge.gray{background:#eef0f0; color:var(--muted);}
+
+/* ── 分析 ───────────────── */
+.bar-row{display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:13px;}
+.bar-row .k{flex:0 0 38%; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.bar-row .track{flex:1; height:10px; border-radius:999px; background:var(--line); overflow:hidden;}
+.bar-row .fill{height:100%; background:var(--minus); border-radius:999px;}
+.bar-row .n{flex:0 0 auto; font-weight:700; font-variant-numeric:tabular-nums; min-width:3em; text-align:right;}
+table.grid{width:100%; border-collapse:collapse; font-size:13px;}
+table.grid th,table.grid td{padding:7px 4px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap;}
+table.grid th:first-child,table.grid td:first-child{text-align:left; white-space:normal;}
+table.grid th{font-size:11.5px; color:var(--muted);}
+.compare{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+.compare .stat .v{font-size:16px;}
+
+/* ── フォーム・ボタン ───────────────── */
+input,select,textarea,button{font-family:inherit; font-size:16px;}
+input[type=text],input[type=password],input[type=number],select,textarea{
+  width:100%; padding:10px 12px; margin-top:4px;
+  border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--text); min-height:var(--tap);
+}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outline-offset:-1px;}
+.form label{display:block; margin-bottom:12px; font-size:13px; color:var(--muted); font-weight:600;}
+.form label.inline{display:flex; align-items:center; gap:8px;}
+.form label.inline input{width:auto; margin:0;}
+.btn{
+  border:1px solid var(--line); background:#fff; color:var(--text);
+  border-radius:9px; padding:10px 14px; cursor:pointer; min-height:var(--tap); font-weight:700; white-space:nowrap;
+}
+.btn:hover{filter:brightness(.97);}
+.btn.primary{background:var(--primary); border-color:var(--primary); color:#fff;}
+.btn.danger{color:var(--danger); border-color:#f0c8c8;}
+.btn.block{width:100%;}
+.btn.tiny{padding:5px 10px; min-height:32px; font-size:13px;}
+.btn:disabled{opacity:.5; cursor:not-allowed;}
+.btn-row{display:flex; gap:8px; flex-wrap:wrap;}
+
+/* ── ルーチン編集の動作行 ───────────────── */
+.step-edit{display:flex; gap:6px; align-items:center; margin-bottom:8px;}
+.step-edit input[type=text]{flex:1; margin:0;}
+.step-edit input[type=number]{width:58px; margin:0; padding:10px 6px; text-align:center;}
+.step-edit .u{font-size:12px; color:var(--muted);}
+.step-edit .btn{padding:6px 8px; min-height:38px;}
+
+/* ── ダイアログ・トースト ───────────────── */
+.modal{
+  position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:60;
+  display:flex; align-items:flex-end; justify-content:center;
+}
+.modal-box{
+  background:#fff; color:var(--text); border-radius:16px 16px 0 0; padding:18px;
+  padding-bottom:calc(18px + env(safe-area-inset-bottom));
+  width:100%; max-width:520px; max-height:90vh; overflow-y:auto;
+}
+.modal-actions{display:flex; gap:8px; margin-top:10px;}
+.modal-actions .btn{flex:1;}
+.toast{
+  position:fixed; left:50%; bottom:86px; transform:translateX(-50%);
+  background:#23282e; color:#fff; padding:12px 18px; border-radius:10px;
+  font-size:14px; z-index:70; max-width:90vw; text-align:center; box-shadow:0 4px 16px rgba(0,0,0,.25);
+}
+.toast.err{background:var(--danger);}
+.toast.ok{background:var(--ok);}
+
+/* ============================================================
+   PC（画面が広いとき）
+   ============================================================ */
+@media (min-width:760px){
+  .bottomnav{display:none;}
+  .tabs{
+    display:flex; gap:4px; padding:0 14px; background:var(--card);
+    border-bottom:1px solid var(--line); position:sticky; top:53px; z-index:19;
+  }
+  .tabs button{
+    border:0; background:none; padding:12px 16px; cursor:pointer; font-size:14px; font-weight:700;
+    color:var(--muted); border-bottom:2px solid transparent; position:relative;
+  }
+  .tabs button.active{color:var(--primary-dark); border-bottom-color:var(--primary);}
+  .tabs .dot{position:static; display:inline-block; margin-left:4px;}
+  main{padding:16px 16px 40px;}
+  .tile-grid{grid-template-columns:repeat(4,1fr);}
+  .modal{align-items:center;}
+  .modal-box{border-radius:14px;}
+  .toast{bottom:32px;}
+}
+</style>
+
+</head>
+<body>
+
+<!-- ── 読み込み中 ───────────────── -->
+<div id="loading" class="gate">
+  <div class="gate-box">
+    <div class="spinner"></div>
+    <p class="muted">読み込み中…</p>
+  </div>
+</div>
+
+<!-- ── 家庭ログイン／新規登録 ───────────────── -->
+<div id="authGate" class="gate hidden">
+  <div class="gate-box">
+    <div class="logo">⏱</div>
+    <h1>時間貯金タイマー</h1>
+
+    <div id="authLogin">
+      <p class="muted">家庭名とパスワードでログインしてください。</p>
+      <form class="form" onsubmit="doLogin(); return false;">
+        <label>家庭名<input type="text" id="au_family" autocomplete="username"></label>
+        <label>パスワード<input type="password" id="au_password" autocomplete="current-password"></label>
+        <p class="error" id="au_error"></p>
+        <button class="btn primary block" type="submit">ログイン</button>
+      </form>
+      <p class="muted auth-switch">はじめて使う家庭ですか？
+        <a href="#" onclick="showAuthMode('register'); return false;">新しい家庭を登録する</a>
+      </p>
+    </div>
+
+    <div id="authRegister" class="hidden">
+      <p class="muted">家庭名とパスワードは家族で共有します。PINは親だけが知っている4けたの数字で、交換の承認や設定の変更に使います。</p>
+      <form class="form" onsubmit="doRegister(); return false;">
+        <label>家庭名<input type="text" id="rg_family" placeholder="例：山田家"></label>
+        <label>パスワード（4文字以上）<input type="password" id="rg_password" autocomplete="new-password"></label>
+        <label>親の名前<input type="text" id="rg_parent" placeholder="例：お母さん"></label>
+        <label>親のPIN（数字4けた）<input type="password" id="rg_pin" inputmode="numeric" maxlength="4" autocomplete="off"></label>
+        <p class="error" id="rg_error"></p>
+        <button class="btn primary block" type="submit">登録してはじめる</button>
+      </form>
+      <p class="muted auth-switch"><a href="#" onclick="showAuthMode('login'); return false;">ログインにもどる</a></p>
+    </div>
+  </div>
+</div>
+
+<!-- ── この端末を使うのは誰？ ───────────────── -->
+<div id="whoGate" class="gate hidden">
+  <div class="gate-box">
+    <h1>だれが使う？</h1>
+    <p class="muted">この端末で使う人をえらんでね（あとで変えられます）</p>
+    <div id="whoList" class="who-list"></div>
+  </div>
+</div>
+
+<!-- ── 上のバー・タブ ───────────────── -->
+<header class="topbar hidden" id="topbar">
+  <div class="brand">⏱ 時間貯金</div>
+  <button class="me-chip" id="meChip" onclick="openWho()"></button>
+</header>
+<nav class="tabs hidden" id="tabs"></nav>
+
+<main id="main" class="hidden">
+  <!-- タイマー -->
+  <section id="view-timer" class="view">
+    <div class="bank-mini" id="bankMini"></div>
+    <div class="card">
+      <div class="card-head">
+        <h2>ルーチンをえらぶ</h2>
+        <label class="switch"><input type="checkbox" id="showRemaining" onchange="setShowRemaining(this.checked)"> 残り時間を表示</label>
+      </div>
+      <div id="routineList" class="routine-list"></div>
+    </div>
+    <div class="card hidden" id="outboxCard"></div>
+  </section>
+
+  <!-- 貯金・交換 -->
+  <section id="view-bank" class="view hidden">
+    <div class="member-seg" id="bankMembers"></div>
+    <div id="bankSummary"></div>
+    <div class="card">
+      <h2>交換する</h2>
+      <div id="rewardList" class="tile-grid"></div>
+    </div>
+    <div class="card">
+      <h2>承認待ち</h2>
+      <div id="pendingList" class="list"></div>
+    </div>
+    <div class="card">
+      <h2>交換の履歴</h2>
+      <div id="exchangeList" class="list"></div>
+    </div>
+    <div class="card">
+      <h2>最近の記録</h2>
+      <div id="runList" class="list"></div>
+    </div>
+  </section>
+
+  <!-- 分析 -->
+  <section id="view-analysis" class="view hidden">
+    <div class="member-seg" id="anMembers"></div>
+    <div class="member-seg small" id="anDays"></div>
+    <div id="analysis"></div>
+  </section>
+
+  <!-- 設定 -->
+  <section id="view-settings" class="view hidden">
+    <div id="settings"></div>
+  </section>
+</main>
+<nav class="bottomnav hidden" id="bottomnav"></nav>
+
+<!-- ── ルーチン実行中の画面（全画面）───────────────── -->
+<div id="runScreen" class="run hidden">
+  <div class="run-top">
+    <button class="btn tiny" onclick="quitRun()">やめる</button>
+    <div class="run-title" id="runTitle"></div>
+    <button class="btn tiny" id="runEye" onclick="toggleRunShow()"></button>
+  </div>
+  <div class="run-progress"><div id="runBar"></div></div>
+  <div class="run-body" id="runBody">
+    <div class="run-count" id="runCount"></div>
+    <div class="run-step" id="runStep"></div>
+    <div class="run-target" id="runTarget"></div>
+    <div class="run-clock" id="runClock"></div>
+    <div class="run-saved" id="runSaved"></div>
+    <button class="run-next" id="runNext" onclick="nextStep()">できた！ 次へ ▶</button>
+    <div class="run-sub">
+      <button class="btn" id="runPause" onclick="togglePause()">⏸ 一時停止</button>
+      <button class="btn" onclick="skipStep()">⏭ とばす</button>
+    </div>
+    <div class="run-upcoming" id="runUpcoming"></div>
+  </div>
+  <div class="run-body hidden" id="runDone"></div>
+</div>
+
+<!-- ── ダイアログ ───────────────── -->
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <h2 id="modalTitle"></h2>
+    <div id="modalBody"></div>
+    <p class="error" id="modalError"></p>
+    <div class="modal-actions">
+      <button class="btn" id="modalCancel">やめる</button>
+      <button class="btn primary" id="modalOk">OK</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script>
+/* ============================================================
+   時間貯金タイマー  ―  画面の動き
+   ============================================================ */
+
+/* インストール版（PWA）のときは build-pwa.js がここにGASのURLを入れる。
+   GASのWebアプリとして開いたときは空のまま → google.script.run を使う */
+const API_URL = "https://script.google.com/macros/s/AKfycbwYVPlYAM3Xel3O8NP3bErPGCtzW9Mua5WtuWhOv6VHIaDDmb_oT354htcyXW-SFjgboQ/exec";
+
+/** サーバーの関数を呼ぶ（await で使える） */
+function gs(fnName){
+  const args = Array.prototype.slice.call(arguments, 1);
+  if (API_URL) return gsFetch_(fnName, args);
+  return new Promise(function(resolve, reject){
+    google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fnName].apply(null, args);
+  });
+}
+
+/* PWA版：GASの doPost に fetch で送る。
+   Content-Type を text/plain にするのは、ブラウザの事前確認（CORSプリフライト）を起こさないため */
+async function gsFetch_(fnName, args){
+  let res;
+  try{
+    res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ fn: fnName, args: args })
+    });
+  }catch(e){
+    const err = new Error('インターネットにつながっていません');
+    err.network = true;
+    throw err;
+  }
+  let data;
+  try{ data = await res.json(); }
+  catch(e){ throw new Error('サーバーの応答が読めませんでした（' + res.status + '）'); }
+  if (!data.ok) throw new Error(data.error);
+  return data.result;
+}
+
+/* ── 端末に覚えておくもの（localStorage）──────────
+   rt_token  ログイン中のトークン
+   rt_me_<家庭名>  この端末で使う人
+   rt_show   残り時間を表示するか
+   rt_run    実行中のルーチン（アプリを閉じても続きから再開するため）
+   rt_outbox 送信待ちの実行結果（圏外のとき用） */
+function load_(key, def){
+  try{ const v = localStorage.getItem(key); return v == null ? def : JSON.parse(v); }catch(e){ return def; }
+}
+function save_(key, val){
+  try{ if (val == null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(val)); }catch(e){}
+}
+
+const S = {
+  token: '', familyName: '',
+  members: [], routines: [], rewards: [], balances: {}, pendingCount: 0, today: '',
+  me: '',               // この端末の人（メンバーID）
+  view: 'timer',
+  bankMember: '',       // 貯金タブで見ている人
+  anMember: '', anDays: 7,
+  parentPin: '',        // 親のPIN（確認済みのものをこの画面を開いている間だけ覚える）
+  pinFor: ''            // そのPINがどの親のものか
+};
+
+const VIEWS = [
+  { key:'timer',    label:'タイマー', ico:'⏱' },
+  { key:'bank',     label:'貯金',     ico:'💰' },
+  { key:'analysis', label:'分析',     ico:'📊' },
+  { key:'settings', label:'設定',     ico:'⚙️' }
+];
+
+const REASONS = ['ぼーっとしてた', 'スマホ・テレビ', '話しかけられた', '思ったより大変', '探し物', '眠かった'];
+
+
+/* ============================================================
+   1. 起動・ログイン
+   ============================================================ */
+
+window.addEventListener('load', boot);
+window.addEventListener('online', function(){ flushOutbox(); });
+
+async function boot(){
+  S.token = load_('rt_token', '');
+  if (S.token){
+    try{
+      await loadBootstrap();
+      afterLogin();
+      return;
+    }catch(err){
+      if (err.network){
+        // 圏外：ログアウトせず、実行中のルーチンがあれば続けられるようにする
+        if (load_('rt_run', null)){ show('loading', false); resumeRun(); return; }
+        document.querySelector('#loading .gate-box').innerHTML =
+          '<p>' + esc(err.message) + '</p><button class="btn primary block" onclick="location.reload()">もう一度読み込む</button>';
+        return;
+      }
+      save_('rt_token', null);
+      S.token = '';
+    }
+  }
+  show('loading', false);
+  showAuthMode('login');
+}
+
+function showAuthMode(mode){
+  show('authGate', true);
+  show('authLogin', mode === 'login');
+  show('authRegister', mode === 'register');
+}
+
+async function doLogin(){
+  const errEl = document.getElementById('au_error');
+  errEl.textContent = '';
+  try{
+    const res = await gs('loginFamily', { familyName: val('au_family'), password: val('au_password') });
+    await onLoggedIn(res);
+  }catch(err){ errEl.textContent = errText(err); }
+}
+
+async function doRegister(){
+  const errEl = document.getElementById('rg_error');
+  errEl.textContent = '';
+  try{
+    const res = await gs('registerFamily', {
+      familyName: val('rg_family'), password: val('rg_password'), parentName: val('rg_parent'), pin: val('rg_pin')
+    });
+    await onLoggedIn(res);
+  }catch(err){ errEl.textContent = errText(err); }
+}
+
+async function onLoggedIn(res){
+  S.token = res.token;
+  save_('rt_token', res.token);
+  show('authGate', false);
+  show('loading', true);
+  await loadBootstrap();
+  afterLogin();
+}
+
+async function loadBootstrap(){
+  const b = await gs('getBootstrap', S.token);
+  S.familyName = b.familyName;
+  S.members = b.members;
+  S.routines = b.routines;
+  S.rewards = b.rewards;
+  S.balances = b.balances;
+  S.pendingCount = b.pendingCount;
+  S.today = b.today;
+}
+
+function afterLogin(){
+  show('loading', false);
+  S.me = load_(meKey_(), '');
+  if (!member_(S.me)){ openWho(); return; }
+  enterApp();
+}
+
+function meKey_(){ return 'rt_me_' + S.familyName; }
+
+function openWho(){
+  const list = activeMembers_();
+  document.getElementById('whoList').innerHTML = list.map(function(m){
+    return '<button class="who-btn" onclick="chooseMe(\'' + m.id + '\')">' + esc(m.name) +
+      (m.role === '親' ? ' <span class="muted">（親）</span>' : '') + '</button>';
+  }).join('') || '<p class="muted">メンバーがいません</p>';
+  show('whoGate', true);
+}
+
+function chooseMe(id){
+  S.me = id;
+  save_(meKey_(), id);
+  S.bankMember = id;
+  S.anMember = id;
+  show('whoGate', false);
+  enterApp();
+}
+
+function enterApp(){
+  S.bankMember = S.bankMember || S.me;
+  S.anMember = S.anMember || S.me;
+  ['topbar', 'tabs', 'main', 'bottomnav'].forEach(function(id){ show(id, true); });
+  document.getElementById('meChip').textContent = '👤 ' + member_(S.me).name;
+  document.getElementById('showRemaining').checked = load_('rt_show', true);
+  renderNav();
+  switchView(S.view);
+  flushOutbox();
+  if (load_('rt_run', null)) resumeRun();
+}
+
+async function logout(){
+  try{ await gs('logoutFamily', { token: S.token }); }catch(err){}
+  save_('rt_token', null);
+  location.reload();
+}
+
+
+/* ============================================================
+   2. タブ
+   ============================================================ */
+
+function renderNav(){
+  const html = function(isBottom){
+    return VIEWS.map(function(v){
+      const dot = v.key === 'bank' && S.pendingCount ? '<span class="dot">' + S.pendingCount + '</span>' : '';
+      return '<button class="' + (S.view === v.key ? 'active' : '') + '" onclick="switchView(\'' + v.key + '\')">' +
+        (isBottom ? '<span class="ico">' + v.ico + '</span>' : v.ico + ' ') + v.label + dot + '</button>';
+    }).join('');
+  };
+  document.getElementById('tabs').innerHTML = html(false);
+  document.getElementById('bottomnav').innerHTML = html(true);
+}
+
+function switchView(key){
+  S.view = key;
+  VIEWS.forEach(function(v){ show('view-' + v.key, v.key === key); });
+  renderNav();
+  window.scrollTo(0, 0);
+  if (key === 'timer') renderTimerView();
+  if (key === 'bank') renderBank();
+  if (key === 'analysis') renderAnalysis();
+  if (key === 'settings') renderSettings();
+}
+
+async function refresh(){
+  await loadBootstrap();
+  renderNav();
+  switchView(S.view);
+}
+
+
+/* ============================================================
+   3. タイマータブ（ルーチンをえらぶ）
+   ============================================================ */
+
+function renderTimerView(){
+  const b = bal_(S.me);
+  document.getElementById('bankMini').innerHTML =
+    '<div><div class="label">' + esc(member_(S.me).name) + 'の時間貯金</div><div class="val">' + fmtDur(b.balanceSec) + '</div></div>' +
+    '<div class="side">今週 <b>' + fmtSigned(b.weekSec) + '</b><br>今月 <b>' + fmtSigned(b.monthSec) + '</b></div>';
+
+  const list = myRoutines_();
+  document.getElementById('routineList').innerHTML = list.map(function(r){
+    const total = r.steps.reduce(function(s, x){ return s + x.targetSec; }, 0);
+    return '<button class="routine" onclick="startRun(\'' + r.id + '\')">' +
+      '<span class="play">▶</span><span><div class="name">' + esc(r.name) + '</div>' +
+      '<div class="sub">' + r.steps.length + 'こ・目標 ' + fmtDur(total) + '</div></span></button>';
+  }).join('') || '<p class="empty">使えるルーチンがありません。親が「設定」から作ってください</p>';
+  renderOutbox();
+}
+
+function myRoutines_(){
+  return S.routines.filter(function(r){
+    return r.active && r.steps.length && (!r.memberId || r.memberId === S.me);
+  });
+}
+
+function setShowRemaining(on){ save_('rt_show', !!on); }
+
+
+/* ============================================================
+   4. ルーチン実行（ここが本体）
+   時間は「開始した時刻」から計算するので、画面を閉じても・スリープしてもずれない。
+   ============================================================ */
+
+let R = null;          // 実行中のルーチン（rt_run に保存）
+let tickTimer = null;
+let wakeLock = null;
+
+function startRun(routineId){
+  const r = S.routines.filter(function(x){ return x.id === routineId; })[0];
+  if (!r) return;
+  unlockSpeech_();
+  R = {
+    runId: uuid_(), memberId: S.me, memberName: member_(S.me).name,
+    routineId: r.id, routineName: r.name, date: localDate_(),
+    steps: r.steps.map(function(s){ return { id: s.id, name: s.name, targetSec: s.targetSec }; }),
+    idx: 0, stepStart: 0, pausedAt: null, pausedMs: 0, alerted: false,
+    showRemaining: load_('rt_show', true),
+    results: [], askingReason: false
+  };
+  startStep_();
+  openRunScreen_();
+}
+
+function resumeRun(){
+  R = load_('rt_run', null);
+  if (!R) return;
+  openRunScreen_();
+  if (R.askingReason) askReason_();
+}
+
+function openRunScreen_(){
+  show('runScreen', true);
+  show('runBody', true);
+  show('runDone', false);
+  document.getElementById('runTitle').textContent = R.routineName + '（' + R.memberName + '）';
+  requestWakeLock_();
+  clearInterval(tickTimer);
+  tickTimer = setInterval(renderRun_, 250);
+  renderRun_();
+}
+
+function startStep_(){
+  R.stepStart = Date.now();
+  R.pausedAt = null;
+  R.pausedMs = 0;
+  R.alerted = false;
+  persistRun_();
+  const s = R.steps[R.idx];
+  speak((R.idx === 0 ? 'スタート。' : '次は、') + s.name + '。目標' + speakDur_(s.targetSec));
+}
+
+function persistRun_(){ save_('rt_run', R); }
+
+function elapsedMs_(){
+  return (R.pausedAt || Date.now()) - R.stepStart - R.pausedMs;
+}
+
+function renderRun_(){
+  if (!R || R.idx >= R.steps.length) return;
+  const s = R.steps[R.idx];
+  const elapsed = Math.floor(elapsedMs_() / 1000);
+  const remain = s.targetSec - elapsed;
+
+  document.getElementById('runCount').textContent = (R.idx + 1) + ' / ' + R.steps.length;
+  document.getElementById('runStep').textContent = s.name;
+  document.getElementById('runTarget').textContent = '目標 ' + fmtDur(s.targetSec);
+  document.getElementById('runBar').style.width = (R.idx / R.steps.length * 100) + '%';
+  document.getElementById('runEye').textContent = R.showRemaining ? '🙈 かくす' : '👁 見る';
+  document.getElementById('runPause').textContent = R.pausedAt ? '▶ 再開' : '⏸ 一時停止';
+
+  const clock = document.getElementById('runClock');
+  clock.className = 'run-clock' + (R.pausedAt ? ' paused' : '');
+  if (R.showRemaining){
+    clock.textContent = (remain < 0 ? '+' : '') + fmtClock(Math.abs(remain));
+    if (remain < 0) clock.classList.add('over');
+  }else{
+    clock.textContent = R.pausedAt ? '一時停止中' : '計測中…';
+    clock.classList.add('hidden-mode');
+  }
+
+  const saved = R.results.reduce(function(sum, x){ return sum + (x.targetSec - x.actualSec); }, 0);
+  document.getElementById('runSaved').innerHTML = R.results.length
+    ? 'ここまでの貯金 <span class="' + (saved < 0 ? 'minus' : 'plus') + '">' + fmtSigned(saved) + '</span>' : '';
+
+  document.getElementById('runUpcoming').innerHTML = R.steps.map(function(x, i){
+    if (i === R.idx) return '';
+    const res = R.results.filter(function(r){ return r.stepId === x.id && r.idx === i; })[0];
+    const right = res ? '<span class="' + (res.targetSec - res.actualSec < 0 ? 'minus' : 'plus') + '">' + fmtSigned(res.targetSec - res.actualSec) + '</span>'
+                      : (i < R.idx ? 'とばした' : fmtDur(x.targetSec));
+    return '<div class="row' + (i < R.idx ? ' done' : '') + '"><span>' + (i < R.idx ? '✓ ' : '') + esc(x.name) + '</span><span>' + right + '</span></div>';
+  }).join('');
+
+  // 時間ぴったりのお知らせ（残り時間を表示しているときだけ）
+  if (R.showRemaining && !R.alerted && !R.pausedAt && remain <= 0){
+    R.alerted = true;
+    persistRun_();
+    speak('時間です');
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+  }
+}
+
+/** 「できた！次へ」 */
+function nextStep(){
+  if (!R || R.askingReason) return;
+  const s = R.steps[R.idx];
+  const actualSec = Math.max(0, Math.round(elapsedMs_() / 1000));
+  R.results.push({ idx: R.idx, stepId: s.id, name: s.name, targetSec: s.targetSec, actualSec: actualSec,
+                   reason: '', showRemaining: R.showRemaining });
+  if (actualSec > s.targetSec){
+    // オーバー：理由を聞く。聞いている間は次の動作の時間を進めない
+    R.askingReason = true;
+    R.pausedAt = Date.now();   // 理由を書いている間は時計を止める
+    persistRun_();
+    speak(speakDur_(actualSec - s.targetSec) + 'オーバー。理由を教えてね');
+    askReason_();
+  }else{
+    if (actualSec < s.targetSec) speak(speakDur_(s.targetSec - actualSec) + '貯金');
+    goNext_();
+  }
+}
+
+function askReason_(){
+  const last = R.results[R.results.length - 1];
+  let picked = '';
+  openModal({
+    title: '⏰ ' + last.name + ' が ' + fmtDur(last.actualSec - last.targetSec) + ' オーバー',
+    body: '<p class="muted">なんでオーバーしたかな？（あとで「分析」で見られるよ）</p>' +
+      '<div class="chips" id="reasonChips">' + REASONS.map(function(r){
+        return '<button type="button" class="chip" data-r="' + esc(r) + '">' + esc(r) + '</button>';
+      }).join('') + '</div>' +
+      '<div class="form"><label>くわしく（なくてもOK）<input type="text" id="reasonText" maxlength="100"></label></div>',
+    ok: '次へ', cancel: '理由なしで次へ',
+    onOpen: function(){
+      document.querySelectorAll('#reasonChips .chip').forEach(function(btn){
+        btn.onclick = function(){
+          picked = picked === btn.dataset.r ? '' : btn.dataset.r;
+          document.querySelectorAll('#reasonChips .chip').forEach(function(b){ b.classList.toggle('active', b.dataset.r === picked); });
+        };
+      });
+    },
+    onOk: function(){
+      const text = val('reasonText');
+      last.reason = picked ? (text ? picked + '：' + text : picked) : (text ? 'その他：' + text : '');
+      R.askingReason = false;
+      goNext_();
+    },
+    onCancel: function(){
+      R.askingReason = false;
+      goNext_();
+    }
+  });
+}
+
+function goNext_(){
+  R.idx++;
+  if (R.idx >= R.steps.length){ finishRun_(); return; }
+  startStep_();
+  renderRun_();
+}
+
+function skipStep(){
+  if (!R || R.askingReason) return;
+  confirmModal('「' + R.steps[R.idx].name + '」をとばす？', 'とばした動作は記録されません（貯金も増えも減りもしません）', 'とばす', function(){
+    goNext_();
+  });
+}
+
+function togglePause(){
+  if (!R) return;
+  if (R.pausedAt){
+    R.pausedMs += Date.now() - R.pausedAt;
+    R.pausedAt = null;
+  }else{
+    R.pausedAt = Date.now();
+  }
+  persistRun_();
+  renderRun_();
+}
+
+function toggleRunShow(){
+  R.showRemaining = !R.showRemaining;
+  R.alerted = R.alerted || (R.steps[R.idx] && elapsedMs_() / 1000 >= R.steps[R.idx].targetSec);
+  persistRun_();
+  renderRun_();
+}
+
+function quitRun(){
+  if (!R) return;
+  const done = R.results.length;
+  confirmModal('ルーチンをやめる？',
+    done ? 'ここまでの ' + done + 'こ の記録は保存されます。' : 'まだ記録はないので、何も保存されません。',
+    'やめる', function(){
+      if (done) finishRun_(true);
+      else closeRun_();
+    });
+}
+
+function finishRun_(quit){
+  clearInterval(tickTimer);
+  const saved = R.results.reduce(function(sum, x){ return sum + (x.targetSec - x.actualSec); }, 0);
+  const payload = {
+    runId: R.runId, memberId: R.memberId, routineId: R.routineId, date: R.date,
+    results: R.results.map(function(x){
+      return { stepId: x.stepId, name: x.name, targetSec: x.targetSec, actualSec: x.actualSec, reason: x.reason, showRemaining: x.showRemaining };
+    })
+  };
+  const outbox = load_('rt_outbox', []);
+  outbox.push(payload);
+  save_('rt_outbox', outbox);
+
+  if (!quit) speak('おつかれさま。' + (saved >= 0 ? speakDur_(saved) + '貯金できたよ' : speakDur_(-saved) + 'オーバーだったよ'));
+  document.getElementById('runBar').style.width = '100%';
+  show('runBody', false);
+  show('runDone', true);
+  document.getElementById('runDone').innerHTML =
+    '<div style="font-size:40px">' + (saved >= 0 ? '🎉' : '💪') + '</div>' +
+    '<div class="run-count">' + (quit ? 'ここまでの結果' : 'おつかれさま！') + '</div>' +
+    '<div class="done-big ' + (saved < 0 ? 'minus' : 'plus') + '">' + fmtSigned(saved) + '</div>' +
+    '<div class="done-table">' + R.results.map(function(x){
+      const d = x.targetSec - x.actualSec;
+      return '<div class="row"><span>' + esc(x.name) + (x.reason ? '<div class="reason">理由：' + esc(x.reason) + '</div>' : '') +
+        '</span><span class="num">' + fmtClock(x.actualSec) + ' <span class="' + (d < 0 ? 'minus' : 'plus') + '">' + fmtSigned(d) + '</span></span></div>';
+    }).join('') + '</div>' +
+    '<p class="muted" id="sendState" style="color:#cfe">保存しています…</p>' +
+    '<button class="run-next" onclick="closeRun_()">とじる</button>';
+  R = null;
+  save_('rt_run', null);
+  releaseWakeLock_();
+  flushOutbox().then(function(){
+    const el = document.getElementById('sendState');
+    if (!el) return;
+    el.textContent = load_('rt_outbox', []).length ? '📡 圏外のため、つながったら自動で保存します' : '✅ 保存しました';
+  });
+}
+
+function closeRun_(){
+  clearInterval(tickTimer);
+  R = null;
+  save_('rt_run', null);
+  releaseWakeLock_();
+  show('runScreen', false);
+  if (S.token && member_(S.me)) switchView(S.view);
+  else location.reload();   // 圏外で起動していたときは読み込み直す
+}
+
+/** 送信待ちの結果を順番に送る。圏外ならそこで止めて、次の機会に送り直す */
+let flushing = false;
+async function flushOutbox(){
+  if (flushing || !S.token) return;
+  flushing = true;
+  try{
+    let outbox = load_('rt_outbox', []);
+    while (outbox.length){
+      const p = outbox[0];
+      try{
+        const res = await gs('saveRun', Object.assign({ token: S.token }, p));
+        S.balances = res.balances;
+      }catch(err){
+        if (err.network) break;
+        toastErr(new Error('記録を保存できませんでした：' + errText(err)));
+      }
+      outbox = load_('rt_outbox', []).slice(1);
+      save_('rt_outbox', outbox);
+    }
+  }finally{
+    flushing = false;
+  }
+  if (S.view === 'timer' && !document.getElementById('main').classList.contains('hidden')) renderTimerView();
+}
+
+function renderOutbox(){
+  const n = load_('rt_outbox', []).length;
+  const el = document.getElementById('outboxCard');
+  el.classList.toggle('hidden', !n);
+  el.innerHTML = n ? '📡 まだ送れていない記録が ' + n + ' 件あります。 <button class="btn tiny" onclick="flushOutbox()">いま送る</button>' : '';
+}
+
+/* ── 画面を消さない・声で案内 ─────────── */
+async function requestWakeLock_(){
+  try{ if ('wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
+}
+function releaseWakeLock_(){
+  try{ if (wakeLock) wakeLock.release(); }catch(e){}
+  wakeLock = null;
+}
+document.addEventListener('visibilitychange', function(){
+  if (document.visibilityState === 'visible' && R){ wakeLock = null; requestWakeLock_(); renderRun_(); }
+});
+
+function speak(text){
+  try{
+    if (!('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ja-JP';
+    u.rate = 1.05;
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+/** iPhoneは「ボタンを押したとき」に一度しゃべらせないと、その後の声が出ないことがある */
+function unlockSpeech_(){
+  try{ if ('speechSynthesis' in window) speechSynthesis.speak(new SpeechSynthesisUtterance('')); }catch(e){}
+}
+function speakDur_(sec){
+  sec = Math.abs(Math.round(sec));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return (m ? m + '分' : '') + (s || !m ? s + '秒' : '');
+}
+
+
+/* ============================================================
+   5. 貯金タブ（残高・交換・承認）
+   ============================================================ */
+
+async function renderBank(){
+  renderMemberSeg_('bankMembers', S.bankMember, 'pickBankMember');
+  const m = member_(S.bankMember) || member_(S.me);
+  const b = bal_(m.id);
+  document.getElementById('bankSummary').innerHTML =
+    '<div class="bank-mini"><div><div class="label">' + esc(m.name) + 'の時間貯金</div><div class="val">' + fmtDur(b.balanceSec) + '</div></div>' +
+    '<div class="side">' + (b.pendingSec ? '承認待ち <b>' + fmtDur(b.pendingSec) + '</b>' : '') + '</div></div>' +
+    '<div class="stat-row">' +
+      '<div class="stat"><div class="k">今週</div><div class="v ' + sign_(b.weekSec) + '">' + fmtSigned(b.weekSec) + '</div></div>' +
+      '<div class="stat"><div class="k">今月</div><div class="v ' + sign_(b.monthSec) + '">' + fmtSigned(b.monthSec) + '</div></div>' +
+      '<div class="stat"><div class="k">使える</div><div class="v">' + Math.max(0, Math.floor(b.balanceSec / 60)) + '分</div></div>' +
+    '</div>';
+
+  const canUse = m.id === S.me && b.balanceSec >= 60;
+  document.getElementById('rewardList').innerHTML = S.rewards.filter(function(w){ return w.active; }).map(function(w){
+    return '<button class="tile" ' + (canUse ? '' : 'disabled') + ' onclick="openExchange(\'' + w.id + '\')">' +
+      '<span class="name">' + esc(w.name) + '</span><span class="rate">1分 → ' + fmtNum(w.perMin) + esc(w.unit) + '</span></button>';
+  }).join('') || '<p class="empty">交換先がありません</p>';
+  if (m.id !== S.me) document.getElementById('rewardList').insertAdjacentHTML('beforeend', '<p class="muted" style="grid-column:1/-1;margin:0">交換の申請は本人の端末からできます</p>');
+
+  ['pendingList', 'exchangeList', 'runList'].forEach(function(id){
+    document.getElementById(id).innerHTML = '<p class="empty">読み込み中…</p>';
+  });
+  try{
+    const [all, mine, runs] = await Promise.all([
+      gs('getExchanges', { token: S.token, limit: 100 }),
+      gs('getExchanges', { token: S.token, memberId: m.id, limit: 20 }),
+      gs('getHistory', { token: S.token, memberId: m.id, days: 14 })
+    ]);
+    renderPending_(all.filter(function(x){ return x.status === '承認待ち'; }));
+    renderExchangeHistory_(mine.filter(function(x){ return x.status !== '承認待ち'; }));
+    renderRuns_(runs);
+  }catch(err){ toastErr(err); }
+}
+
+function pickBankMember(id){ S.bankMember = id; renderBank(); }
+
+function renderPending_(rows){
+  const meIsParent = member_(S.me).role === '親';
+  S.pendingCount = rows.length;
+  renderNav();
+  document.getElementById('pendingList').innerHTML = rows.map(function(x){
+    let actions = '';
+    if (meIsParent) actions = '<button class="btn tiny primary" onclick="decide(\'' + x.id + '\', true)">承認</button>' +
+                              '<button class="btn tiny danger" onclick="decide(\'' + x.id + '\', false)">却下</button>';
+    else if (x.memberId === S.me) actions = '<button class="btn tiny" onclick="cancelExchange(\'' + x.id + '\')">取消</button>';
+    return '<div class="list-item"><div class="main"><div class="title">' + esc(x.memberName) + '：' + esc(x.rewardName) +
+      ' <span class="val">' + fmtNum(x.value) + esc(x.unit) + '</span></div>' +
+      '<div class="sub">' + fmtDur(x.sec) + 'を使う・' + esc(x.at.slice(5, 16)) + (x.memo ? '・' + esc(x.memo) : '') + '</div></div>' +
+      '<div class="actions">' + actions + '</div></div>';
+  }).join('') || '<p class="empty">承認待ちはありません</p>';
+}
+
+function renderExchangeHistory_(rows){
+  const badge = { '承認': 'ok', '却下': 'ng', '取消': 'gray' };
+  document.getElementById('exchangeList').innerHTML = rows.map(function(x){
+    return '<div class="list-item"><div class="main"><div class="title">' + esc(x.rewardName) + ' ' + fmtNum(x.value) + esc(x.unit) +
+      ' <span class="badge ' + (badge[x.status] || 'gray') + '">' + esc(x.status) + '</span></div>' +
+      '<div class="sub">' + esc(x.at.slice(0, 16)) + '・' + fmtDur(x.sec) + (x.decidedBy ? '・' + esc(x.decidedBy) : '') +
+      (x.rejectReason ? '・理由：' + esc(x.rejectReason) : '') + '</div></div>' +
+      '<div class="val minus">' + (x.status === '承認' ? '−' + fmtDur(x.sec) : '') + '</div></div>';
+  }).join('') || '<p class="empty">まだありません</p>';
+}
+
+function renderRuns_(runs){
+  const meIsParent = member_(S.me).role === '親';
+  document.getElementById('runList').innerHTML = runs.map(function(r, i){
+    return '<div class="list-item col"><div class="list-head" onclick="toggle(\'run' + i + '\')"><div class="main">' +
+      '<div class="title">' + esc(r.routineName) + '</div><div class="sub">' + esc(r.date) + '・' + r.steps.length + 'こ</div></div>' +
+      '<div class="val ' + sign_(r.savedSec) + '">' + fmtSigned(r.savedSec) + '</div></div>' +
+      '<div class="steps-mini hidden" id="run' + i + '">' + r.steps.map(function(s){
+        return '<div class="row"><span>' + (s.hidden ? '🙈 ' : '') + esc(s.name) + '</span><span class="num">' + fmtClock(s.actualSec) + ' / ' + fmtClock(s.targetSec) +
+          ' <b class="' + sign_(s.savedSec) + '">' + fmtSigned(s.savedSec) + '</b></span></div>' +
+          (s.reason ? '<div class="reason">理由：' + esc(s.reason) + '</div>' : '');
+      }).join('') +
+      (meIsParent ? '<div style="text-align:right;margin-top:6px"><button class="btn tiny danger" onclick="cancelRun(\'' + r.runId + '\')">この記録を取り消す</button></div>' : '') +
+      '</div></div>';
+  }).join('') || '<p class="empty">まだ記録がありません</p>';
+}
+
+function openExchange(rewardId){
+  const w = S.rewards.filter(function(x){ return x.id === rewardId; })[0];
+  const maxMin = Math.floor(bal_(S.me).balanceSec / 60);
+  openModal({
+    title: '🎁 ' + w.name + 'に交換',
+    body: '<p class="muted">使えるのは ' + maxMin + '分 まで。親が承認したら決まります。</p>' +
+      '<div class="form"><label>使う時間（分）<input type="number" id="exMin" min="1" max="' + maxMin + '" value="' + maxMin + '" inputmode="numeric"></label>' +
+      '<p id="exPreview" style="font-size:18px;font-weight:800;margin:0 0 10px"></p>' +
+      '<label>メモ（なくてもOK）<input type="text" id="exMemo" maxlength="100" placeholder="例：土曜日に使いたい"></label></div>',
+    ok: '申請する',
+    onOpen: function(){
+      const upd = function(){
+        const n = Math.max(0, Math.floor(Number(val('exMin')) || 0));
+        document.getElementById('exPreview').textContent = n + '分 → ' + fmtNum(Math.round(n * w.perMin * 100) / 100) + w.unit;
+      };
+      document.getElementById('exMin').oninput = upd;
+      upd();
+    },
+    onOk: async function(){
+      const res = await gs('requestExchange', { token: S.token, memberId: S.me, rewardId: w.id, minutes: Number(val('exMin')), memo: val('exMemo') });
+      S.balances = res.balances;
+      toast(res.message, 'ok');
+      renderBank();
+    }
+  });
+}
+
+async function cancelExchange(id){
+  try{
+    const res = await gs('cancelExchange', { token: S.token, requestId: id });
+    S.balances = res.balances;
+    toast(res.message, 'ok');
+    renderBank();
+  }catch(err){ toastErr(err); }
+}
+
+async function decide(id, approve){
+  const pin = await needPin();
+  if (!pin) return;
+  const go = async function(reason){
+    try{
+      const res = await gs('decideExchange', { token: S.token, actorId: S.me, pin: pin, requestId: id, approve: approve, reason: reason || '' });
+      S.balances = res.balances;
+      toast(res.message, 'ok');
+      renderBank();
+    }catch(err){ pinFailed_(err); toastErr(err); }
+  };
+  if (approve) return go('');
+  openModal({
+    title: '却下する',
+    body: '<div class="form"><label>理由（子どもに見えます）<input type="text" id="rjReason" maxlength="100"></label></div>',
+    ok: '却下する',
+    onOk: function(){ return go(val('rjReason')); }
+  });
+}
+
+async function cancelRun(runId){
+  const pin = await needPin();
+  if (!pin) return;
+  openModal({
+    title: 'この記録を取り消す？',
+    body: '<p class="muted">取り消すと、この回の貯金（プラスもマイナスも）がなかったことになります。</p>' +
+      '<div class="form"><label>理由<input type="text" id="crReason" maxlength="100" placeholder="例：押しまちがい"></label></div>',
+    ok: '取り消す',
+    onOk: async function(){
+      try{
+        const res = await gs('cancelRun', { token: S.token, actorId: S.me, pin: pin, runId: runId, reason: val('crReason') });
+        toast(res.message, 'ok');
+        await refresh();
+      }catch(err){ pinFailed_(err); throw err; }
+    }
+  });
+}
+
+
+/* ============================================================
+   6. 分析タブ
+   ============================================================ */
+
+async function renderAnalysis(){
+  renderMemberSeg_('anMembers', S.anMember, 'pickAnMember');
+  document.getElementById('anDays').innerHTML = [7, 30, 90].map(function(d){
+    return '<button class="' + (S.anDays === d ? 'active' : '') + '" onclick="pickAnDays(' + d + ')">' + d + '日</button>';
+  }).join('');
+  const box = document.getElementById('analysis');
+  box.innerHTML = '<p class="empty">読み込み中…</p>';
+  let a;
+  try{ a = await gs('getAnalysis', { token: S.token, memberId: S.anMember, days: S.anDays }); }
+  catch(err){ box.innerHTML = ''; toastErr(err); return; }
+  if (!a.steps.length){ box.innerHTML = '<div class="card"><p class="empty">この期間の記録がありません</p></div>'; return; }
+
+  const maxReason = a.reasons.length ? a.reasons[0].count : 1;
+  box.innerHTML =
+    '<div class="card"><h2>👁 表示あり と 🙈 かくす の比べっこ</h2><div class="compare">' +
+      modeStat_('👁 残り時間を表示', a.mode.shown) + modeStat_('🙈 かくす', a.mode.hidden) +
+    '</div><p class="muted" style="margin:8px 0 0">1つの動作あたりの平均貯金です。</p></div>' +
+
+    '<div class="card"><h2>オーバーしやすい動作</h2><table class="grid"><tr><th>動作</th><th>回数</th><th>オーバー</th><th>平均</th><th>貯金計</th></tr>' +
+    a.steps.map(function(s){
+      return '<tr><td>' + esc(s.name) + '<div class="muted" style="font-size:11px">' + esc(s.routineName) + '・目標' + fmtClock(s.targetSec) + '</div></td>' +
+        '<td>' + s.count + '</td><td class="' + (s.overCount ? 'minus' : '') + '">' + Math.round(s.overRate * 100) + '%</td>' +
+        '<td class="num">' + fmtClock(s.avgActual) + '</td><td class="num ' + sign_(s.totalSaved) + '">' + fmtSigned(s.totalSaved) + '</td></tr>';
+    }).join('') + '</table></div>' +
+
+    '<div class="card"><h2>オーバーの理由ランキング</h2>' + (a.reasons.map(function(r){
+      return '<div class="bar-row"><span class="k">' + esc(r.label) + '</span><span class="track"><span class="fill" style="display:block;width:' +
+        Math.round(r.count / maxReason * 100) + '%"></span></span><span class="n">' + r.count + '回</span></div>';
+    }).join('') || '<p class="empty">オーバーなし！すごい！</p>') + '</div>' +
+
+    '<div class="card"><h2>最近のオーバー</h2><div class="list">' + (a.overs.map(function(o){
+      return '<div class="list-item"><div class="main"><div class="title">' + esc(o.name) + '</div>' +
+        '<div class="sub">' + esc(o.date) + '・' + esc(o.routineName) + (o.reason ? '・' + esc(o.reason) : '・理由なし') + '</div></div>' +
+        '<div class="val minus">+' + fmtDur(o.overSec) + '</div></div>';
+    }).join('') || '<p class="empty">なし</p>') + '</div></div>';
+}
+
+function modeStat_(label, m){
+  return '<div class="stat"><div class="k">' + label + '</div><div class="v ' + (m.count ? sign_(m.avgSaved) : '') + '">' +
+    (m.count ? fmtSigned(m.avgSaved) : '—') + '</div><div class="muted">' + m.count + '回</div></div>';
+}
+function pickAnMember(id){ S.anMember = id; renderAnalysis(); }
+function pickAnDays(d){ S.anDays = d; renderAnalysis(); }
+
+
+/* ============================================================
+   7. 設定タブ（親はPINで編集できる）
+   ============================================================ */
+
+function renderSettings(){
+  const me = member_(S.me);
+  const isParent = me.role === '親';
+  const unlocked = isParent && S.parentPin && S.pinFor === S.me;
+  let html = '<div class="card"><h2>この端末</h2><p>家庭：<b>' + esc(S.familyName) + '</b>　使う人：<b>' + esc(me.name) + '</b></p>' +
+    '<div class="btn-row"><button class="btn" onclick="openWho()">使う人を変える</button>' +
+    '<button class="btn danger" onclick="logout()">ログアウト</button></div></div>';
+
+  if (!isParent){
+    html += '<div class="card"><p class="muted">ルーチンや交換先の変更は、親が自分のスマホ（または「使う人」を親にして）から行います。</p></div>';
+  }else if (!unlocked){
+    html += '<div class="card"><h2>🔒 親の設定</h2><p class="muted">ルーチン・交換先・メンバーの変更にはPINが必要です。</p>' +
+      '<button class="btn primary" onclick="unlockSettings()">PINを入れて開く</button></div>';
+  }else{
+    html += '<div class="card"><div class="card-head"><h2>ルーチン</h2><button class="btn tiny primary" onclick="editRoutine(\'\')">＋ 追加</button></div><div class="list">' +
+      S.routines.map(function(r){
+        const who = r.memberId ? (member_(r.memberId) || { name: '?' }).name + '用' : 'みんな';
+        return '<div class="list-item"><div class="main"><div class="title">' + esc(r.name) + (r.active ? '' : ' <span class="badge gray">停止中</span>') + '</div>' +
+          '<div class="sub">' + who + '・' + r.steps.length + 'こ・' + r.steps.map(function(s){ return esc(s.name); }).join(' → ') + '</div></div>' +
+          '<div class="actions"><button class="btn tiny" onclick="editRoutine(\'' + r.id + '\')">編集</button></div></div>';
+      }).join('') + '</div></div>';
+
+    html += '<div class="card"><div class="card-head"><h2>交換先</h2><button class="btn tiny primary" onclick="editReward(\'\')">＋ 追加</button></div><div class="list">' +
+      S.rewards.map(function(w){
+        return '<div class="list-item"><div class="main"><div class="title">' + esc(w.name) + (w.active ? '' : ' <span class="badge gray">停止中</span>') + '</div>' +
+          '<div class="sub">貯金1分 → ' + fmtNum(w.perMin) + esc(w.unit) + '</div></div>' +
+          '<div class="actions"><button class="btn tiny" onclick="editReward(\'' + w.id + '\')">編集</button></div></div>';
+      }).join('') + '</div></div>';
+
+    html += '<div class="card"><div class="card-head"><h2>メンバー</h2><button class="btn tiny primary" onclick="editMember(\'\')">＋ 追加</button></div><div class="list">' +
+      S.members.map(function(m){
+        return '<div class="list-item"><div class="main"><div class="title">' + esc(m.name) + ' <span class="badge ' + (m.role === '親' ? 'pending' : 'ok') + '">' + esc(m.role) + '</span>' +
+          (m.active ? '' : ' <span class="badge gray">停止中</span>') + '</div></div>' +
+          '<div class="actions"><button class="btn tiny" onclick="editMember(\'' + m.id + '\')">編集</button></div></div>';
+      }).join('') + '</div></div>';
+
+    html += '<div class="card"><h2>家庭のパスワード</h2><button class="btn" onclick="changePassword()">パスワードを変える</button></div>';
+  }
+  document.getElementById('settings').innerHTML = html;
+}
+
+async function unlockSettings(){
+  if (await needPin()) renderSettings();
+}
+
+/** 親のPINを聞いて確認する。確認できたらPINを返す（この画面を開いている間は覚えておく） */
+function needPin(){
+  const me = member_(S.me);
+  if (me.role !== '親'){ toast('この操作は親だけができます', 'err'); return Promise.resolve(''); }
+  if (S.parentPin && S.pinFor === S.me) return Promise.resolve(S.parentPin);
+  return new Promise(function(resolve){
+    openModal({
+      title: '🔒 ' + me.name + 'のPIN',
+      body: '<div class="form"><label>数字4けた<input type="password" id="pinInput" inputmode="numeric" maxlength="4" autocomplete="off"></label></div>',
+      ok: 'OK',
+      onOpen: function(){ setTimeout(function(){ document.getElementById('pinInput').focus(); }, 50); },
+      onOk: async function(){
+        const pin = val('pinInput');
+        await gs('verifyParentPin', { token: S.token, actorId: S.me, pin: pin });
+        S.parentPin = pin;
+        S.pinFor = S.me;
+        resolve(pin);
+      },
+      onCancel: function(){ resolve(''); }
+    });
+  });
+}
+
+function pinFailed_(err){
+  if (/PIN/.test(errText(err))){ S.parentPin = ''; S.pinFor = ''; }
+}
+
+/** 設定の保存（PIN付きでサーバーへ）→ 読み直し */
+async function saveSetting_(fn, args){
+  try{
+    const res = await gs(fn, Object.assign({ token: S.token, actorId: S.me, pin: S.parentPin }, args));
+    toast(res.message, 'ok');
+    await refresh();
+  }catch(err){ pinFailed_(err); throw err; }
+}
+
+function editRoutine(id){
+  const r = id ? S.routines.filter(function(x){ return x.id === id; })[0]
+               : { id: '', name: '', memberId: '', order: S.routines.length + 1, active: true, steps: [{ id: '', name: '', targetSec: 180 }] };
+  openModal({
+    title: id ? 'ルーチンを編集' : 'ルーチンを追加',
+    body: '<div class="form">' +
+      '<label>ルーチン名<input type="text" id="rtName" value="' + esc(r.name) + '" placeholder="例：朝の支度"></label>' +
+      '<label>だれ用？<select id="rtMember"><option value="">みんな</option>' + S.members.filter(function(m){ return m.active; }).map(function(m){
+        return '<option value="' + m.id + '"' + (m.id === r.memberId ? ' selected' : '') + '>' + esc(m.name) + '</option>';
+      }).join('') + '</select></label>' +
+      '<label>表示順<input type="number" id="rtOrder" value="' + r.order + '"></label>' +
+      '<label class="inline"><input type="checkbox" id="rtActive"' + (r.active ? ' checked' : '') + '> 使う（はずすと一覧に出ません）</label>' +
+      '<h2 style="margin-top:6px">動作（上から順番）</h2><div id="stepRows"></div>' +
+      '<button type="button" class="btn tiny" onclick="addStepRow()">＋ 動作を追加</button></div>',
+    ok: '保存',
+    onOpen: function(){ r.steps.forEach(function(s){ addStepRow(s); }); },
+    onOk: function(){
+      const steps = Array.prototype.map.call(document.querySelectorAll('#stepRows .step-edit'), function(row){
+        return { id: row.dataset.id, name: row.querySelector('.sn').value,
+                 targetSec: (Number(row.querySelector('.sm').value) || 0) * 60 + (Number(row.querySelector('.ss').value) || 0) };
+      });
+      return saveSetting_('saveRoutine', { routineId: r.id, name: val('rtName'), memberId: val('rtMember'),
+        order: Number(val('rtOrder')), active: document.getElementById('rtActive').checked, steps: steps });
+    }
+  });
+}
+
+function addStepRow(s){
+  s = s || { id: '', name: '', targetSec: 180 };
+  const row = document.createElement('div');
+  row.className = 'step-edit';
+  row.dataset.id = s.id;
+  row.innerHTML = '<input type="text" class="sn" placeholder="動作名" value="' + esc(s.name) + '">' +
+    '<input type="number" class="sm" min="0" inputmode="numeric" value="' + Math.floor(s.targetSec / 60) + '"><span class="u">分</span>' +
+    '<input type="number" class="ss" min="0" max="59" inputmode="numeric" value="' + (s.targetSec % 60) + '"><span class="u">秒</span>' +
+    '<button type="button" class="btn" title="上へ">↑</button><button type="button" class="btn danger" title="消す">✕</button>';
+  const btns = row.querySelectorAll('button');
+  btns[0].onclick = function(){ if (row.previousElementSibling) row.parentNode.insertBefore(row, row.previousElementSibling); };
+  btns[1].onclick = function(){ row.remove(); };
+  document.getElementById('stepRows').appendChild(row);
+}
+
+function editReward(id){
+  const w = id ? S.rewards.filter(function(x){ return x.id === id; })[0]
+               : { id: '', name: '', perMin: 1, unit: '', order: S.rewards.length + 1, active: true };
+  openModal({
+    title: id ? '交換先を編集' : '交換先を追加',
+    body: '<div class="form">' +
+      '<label>名前<input type="text" id="rwName" value="' + esc(w.name) + '" placeholder="例：ゲーム時間"></label>' +
+      '<label>貯金1分あたり<input type="number" id="rwPer" step="any" value="' + w.perMin + '"></label>' +
+      '<label>単位<input type="text" id="rwUnit" value="' + esc(w.unit) + '" placeholder="例：分、円"></label>' +
+      '<label>表示順<input type="number" id="rwOrder" value="' + w.order + '"></label>' +
+      '<label class="inline"><input type="checkbox" id="rwActive"' + (w.active ? ' checked' : '') + '> 使う</label>' +
+      '<p class="muted">例）ゲーム時間：1分あたり「1」単位「分」／ おこづかい：1分あたり「10」単位「円」</p></div>',
+    ok: '保存',
+    onOk: function(){
+      return saveSetting_('saveReward', { rewardId: w.id, name: val('rwName'), perMin: Number(val('rwPer')), unit: val('rwUnit'),
+        order: Number(val('rwOrder')), active: document.getElementById('rwActive').checked });
+    }
+  });
+}
+
+function editMember(id){
+  const m = id ? member_(id) : { id: '', name: '', role: '子', order: S.members.length + 1, active: true, hasPin: false };
+  openModal({
+    title: id ? 'メンバーを編集' : 'メンバーを追加',
+    body: '<div class="form">' +
+      '<label>名前<input type="text" id="mbName" value="' + esc(m.name) + '"></label>' +
+      '<label>役割<select id="mbRole"><option value="子"' + (m.role !== '親' ? ' selected' : '') + '>子</option>' +
+        '<option value="親"' + (m.role === '親' ? ' selected' : '') + '>親（承認・設定ができる）</option></select></label>' +
+      '<label>PIN（親のみ・数字4けた）<input type="password" id="mbPin" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="' +
+        (m.hasPin ? '変えるときだけ入力' : '') + '"></label>' +
+      '<label>表示順<input type="number" id="mbOrder" value="' + m.order + '"></label>' +
+      '<label class="inline"><input type="checkbox" id="mbActive"' + (m.active ? ' checked' : '') + '> 使う</label></div>',
+    ok: '保存',
+    onOk: function(){
+      return saveSetting_('saveMember', { memberId: m.id, name: val('mbName'), role: val('mbRole'), newPin: val('mbPin'),
+        order: Number(val('mbOrder')), active: document.getElementById('mbActive').checked });
+    }
+  });
+}
+
+function changePassword(){
+  openModal({
+    title: '家庭のパスワードを変える',
+    body: '<div class="form"><label>今のパスワード<input type="password" id="pwCur"></label>' +
+      '<label>新しいパスワード（4文字以上）<input type="password" id="pwNew"></label></div>',
+    ok: '変える',
+    onOk: async function(){
+      const res = await gs('changeFamilyPassword', { token: S.token, actorId: S.me, pin: S.parentPin, currentPassword: val('pwCur'), newPassword: val('pwNew') });
+      toast(res.message, 'ok');
+    }
+  });
+}
+
+
+/* ============================================================
+   8. 共通の部品
+   ============================================================ */
+
+function show(id, visible){
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('hidden', !visible);
+}
+function val(id){
+  const el = document.getElementById(id);
+  return el ? String(el.value).trim() : '';
+}
+function toggle(id){ document.getElementById(id).classList.toggle('hidden'); }
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+  });
+}
+function member_(id){ return S.members.filter(function(m){ return m.id === id; })[0]; }
+function activeMembers_(){ return S.members.filter(function(m){ return m.active; }); }
+function bal_(id){ return S.balances[id] || { balanceSec: 0, weekSec: 0, monthSec: 0, pendingSec: 0 }; }
+function sign_(sec){ return sec < 0 ? 'minus' : (sec > 0 ? 'plus' : ''); }
+
+function renderMemberSeg_(elId, current, onPick){
+  document.getElementById(elId).innerHTML = activeMembers_().map(function(m){
+    return '<button class="' + (m.id === current ? 'active' : '') + '" onclick="' + onPick + '(\'' + m.id + '\')">' + esc(m.name) + '</button>';
+  }).join('');
+}
+
+/** 1:05 の形（時計表示） */
+function fmtClock(sec){
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
+}
+/** 12分30秒 の形 */
+function fmtDur(sec){
+  const neg = sec < 0;
+  sec = Math.abs(Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  const t = (h ? h + '時間' : '') + (m ? m + '分' : '') + (s || (!h && !m) ? s + '秒' : '');
+  return (neg ? '−' : '') + t;
+}
+/** +1分20秒 / −40秒 の形 */
+function fmtSigned(sec){ return (sec > 0 ? '+' : '') + fmtDur(sec); }
+function fmtNum(n){ return Number(n).toLocaleString('ja-JP', { maximumFractionDigits: 2 }); }
+
+function localDate_(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function uuid_(){
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
+/**
+ * ダイアログ。opts = {title, body, ok, cancel, onOpen, onOk, onCancel}
+ * onOk が例外を投げたらダイアログは閉じずにエラーを表示する
+ */
+function openModal(opts){
+  document.getElementById('modalTitle').textContent = opts.title;
+  document.getElementById('modalBody').innerHTML = opts.body || '';
+  document.getElementById('modalError').textContent = '';
+  const okBtn = document.getElementById('modalOk');
+  const cancelBtn = document.getElementById('modalCancel');
+  okBtn.textContent = opts.ok || 'OK';
+  cancelBtn.textContent = opts.cancel || 'やめる';
+  okBtn.disabled = false;
+  okBtn.onclick = async function(){
+    okBtn.disabled = true;
+    try{
+      if (opts.onOk) await opts.onOk();
+      show('modal', false);
+    }catch(err){
+      document.getElementById('modalError').textContent = errText(err);
+    }finally{
+      okBtn.disabled = false;
+    }
+  };
+  cancelBtn.onclick = function(){
+    show('modal', false);
+    if (opts.onCancel) opts.onCancel();
+  };
+  show('modal', true);
+  if (opts.onOpen) opts.onOpen();
+}
+
+function confirmModal(title, text, okLabel, onOk){
+  openModal({ title: title, body: '<p>' + esc(text) + '</p>', ok: okLabel, onOk: onOk });
+}
+
+function toast(msg, kind){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast' + (kind ? ' ' + kind : '');
+  clearTimeout(el._t);
+  el._t = setTimeout(function(){ el.classList.add('hidden'); }, 3200);
+}
+function errText(err){ return (err && err.message) || String(err); }
+function toastErr(err){ toast(errText(err), 'err'); console.error(err); }
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js'); });
+}
+</script>
+</body>
+</html>
