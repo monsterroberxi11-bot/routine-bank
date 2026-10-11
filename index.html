@@ -651,6 +651,8 @@ function afterLogin(){
   show('loading', false);
   S.me = load_(meKey_(), '');
   if (!member_(S.me)){ openWho(); return; }
+  // 親として開くときは毎回PINを確認する（子どもが親になりすませないように）
+  if (isParent_(S.me)){ openWho(); chooseMe(S.me); return; }
   enterApp();
 }
 
@@ -665,7 +667,9 @@ function openWho(){
   show('whoGate', true);
 }
 
-function chooseMe(id){
+async function chooseMe(id){
+  if (isParent_(id) && !(await askPin_(id))) return;   // PINをやめたら選ぶ画面のまま
+  if (S.pinFor !== id){ S.parentPin = ''; S.pinFor = ''; }  // 別の人に替えたら覚えたPINは忘れる
   S.me = id;
   save_(meKey_(), id);
   S.bankMember = id;
@@ -1439,20 +1443,26 @@ async function unlockSettings(){
 
 /** 親のPINを聞いて確認する。確認できたらPINを返す（この画面を開いている間は覚えておく） */
 function needPin(){
-  const me = member_(S.me);
-  if (me.role !== '親'){ toast('この操作は親だけができます', 'err'); return Promise.resolve(''); }
-  if (S.parentPin && S.pinFor === S.me) return Promise.resolve(S.parentPin);
+  if (member_(S.me).role !== '親'){ toast('この操作は親だけができます', 'err'); return Promise.resolve(''); }
+  return askPin_(S.me);
+}
+
+/** 親 memberId のPINを聞いてサーバーで確認する。確認できたらPIN、やめたら '' を返す */
+function askPin_(memberId){
+  const m = member_(memberId);
+  if (!m.hasPin) return Promise.resolve('-');   // PIN未設定の親（通常は起きない）はそのまま通す
+  if (S.parentPin && S.pinFor === memberId) return Promise.resolve(S.parentPin);
   return new Promise(function(resolve){
     openModal({
-      title: '🔒 ' + me.name + 'のPIN',
+      title: '🔒 ' + m.name + 'のPIN',
       body: '<div class="form"><label>数字4けた<input type="password" id="pinInput" inputmode="numeric" maxlength="4" autocomplete="off"></label></div>',
       ok: 'OK',
       onOpen: function(){ setTimeout(function(){ document.getElementById('pinInput').focus(); }, 50); },
       onOk: async function(){
         const pin = val('pinInput');
-        await gs('verifyParentPin', { token: S.token, actorId: S.me, pin: pin });
+        await gs('verifyParentPin', { token: S.token, actorId: memberId, pin: pin });
         S.parentPin = pin;
-        S.pinFor = S.me;
+        S.pinFor = memberId;
         resolve(pin);
       },
       onCancel: function(){ resolve(''); }
@@ -1587,6 +1597,7 @@ function esc(s){
     return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
   });
 }
+function isParent_(id){ const m = member_(id); return !!m && m.role === '親'; }
 function member_(id){ return S.members.filter(function(m){ return m.id === id; })[0]; }
 function activeMembers_(){ return S.members.filter(function(m){ return m.active; }); }
 function bal_(id){ return S.balances[id] || { balanceSec: 0, weekSec: 0, monthSec: 0, pendingSec: 0 }; }
