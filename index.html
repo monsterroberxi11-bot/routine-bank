@@ -166,14 +166,22 @@ main{padding:12px 12px 90px; max-width:900px; margin:0 auto;}
 .run-count{font-size:13px; opacity:.7; font-weight:700;}
 .run-step{font-size:30px; font-weight:800; line-height:1.3; margin:6px 0 2px; word-break:break-word;}
 .run-target{font-size:14px; opacity:.75;}
-.run-clock{
-  font-size:min(26vw,120px); font-weight:800; font-variant-numeric:tabular-nums; line-height:1.1;
-  margin:18px 0 6px; letter-spacing:-2px;
-}
-.run-clock.over{color:#ff8a73;}
-.run-clock.hidden-mode{font-size:min(14vw,60px); letter-spacing:0; opacity:.55; animation:breathe 2.4s ease-in-out infinite;}
-.run-clock.paused{opacity:.4;}
-@keyframes breathe{50%{opacity:.25;}}
+.run-clock{width:min(76vw,46vh,320px); aspect-ratio:1; margin:14px 0 6px; transition:opacity .2s;}
+.run-clock svg{width:100%; height:100%; display:block; overflow:visible;}
+.run-clock.paused{opacity:.45;}
+.ck-face{fill:rgba(255,255,255,.05); stroke:rgba(255,255,255,.18); stroke-width:2;}
+.ck-tick{stroke:rgba(255,255,255,.28); stroke-width:1.2; stroke-linecap:round;}
+.ck-tick.major{stroke:rgba(255,255,255,.7); stroke-width:2.6;}
+.ck-sector{fill:var(--primary);}
+.ck-sector.over{fill:#ff6b57;}
+.ck-edge{stroke:#fff; stroke-width:3; stroke-linecap:round;}
+.ck-hole{fill:#0f2a27;}
+.ck-sec{stroke:#ffd166; stroke-width:2; stroke-linecap:round;}
+.ck-pin{fill:#ffd166;}
+.ck-text{fill:#fff; font-size:27px; font-weight:800; text-anchor:middle; font-variant-numeric:tabular-nums;}
+.ck-text.long{font-size:20px;}
+.ck-text.over{fill:#ff8a73;}
+.ck-sub{fill:rgba(255,255,255,.6); font-size:10px; font-weight:700; text-anchor:middle; letter-spacing:1px;}
 .run-saved{font-size:14px; font-weight:700; min-height:1.6em;}
 .run-next{
   width:100%; max-width:420px; margin:18px 0 12px; padding:22px 16px; border:0; border-radius:18px;
@@ -746,6 +754,7 @@ function setShowRemaining(on){ save_('rt_show', !!on); }
 
 let R = null;          // 実行中のルーチン（rt_run に保存）
 let tickTimer = null;
+let clockRaf = 0;
 let wakeLock = null;
 
 function startRun(routineId){
@@ -777,9 +786,16 @@ function openRunScreen_(){
   show('runDone', false);
   document.getElementById('runTitle').textContent = R.routineName + '（' + R.memberName + '）';
   requestWakeLock_();
-  clearInterval(tickTimer);
+  buildClock_();
+  stopTimers_();
   tickTimer = setInterval(renderRun_, 250);
+  clockLoop_();
   renderRun_();
+}
+
+function stopTimers_(){
+  clearInterval(tickTimer);
+  cancelAnimationFrame(clockRaf);
 }
 
 function startStep_(){
@@ -787,6 +803,7 @@ function startStep_(){
   R.pausedAt = null;
   R.pausedMs = 0;
   R.alerted = false;
+  R.refillAt = Date.now();   // 時計の扇形が満タンに戻るアニメーション用
   persistRun_();
   const s = R.steps[R.idx];
   speak((R.idx === 0 ? 'スタート。' : '次は、') + s.name + '。目標' + speakDur_(s.targetSec));
@@ -811,16 +828,6 @@ function renderRun_(){
   document.getElementById('runEye').textContent = R.showRemaining ? '🙈 かくす' : '👁 見る';
   document.getElementById('runPause').textContent = R.pausedAt ? '▶ 再開' : '⏸ 一時停止';
 
-  const clock = document.getElementById('runClock');
-  clock.className = 'run-clock' + (R.pausedAt ? ' paused' : '');
-  if (R.showRemaining){
-    clock.textContent = (remain < 0 ? '+' : '') + fmtClock(Math.abs(remain));
-    if (remain < 0) clock.classList.add('over');
-  }else{
-    clock.textContent = R.pausedAt ? '一時停止中' : '計測中…';
-    clock.classList.add('hidden-mode');
-  }
-
   const saved = R.results.reduce(function(sum, x){ return sum + (x.targetSec - x.actualSec); }, 0);
   document.getElementById('runSaved').innerHTML = R.results.length
     ? 'ここまでの貯金 <span class="' + (saved < 0 ? 'minus' : 'plus') + '">' + fmtSigned(saved) + '</span>' : '';
@@ -840,6 +847,81 @@ function renderRun_(){
     speak('時間です');
     if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
   }
+}
+
+/* ── 動く時計 ─────────────────────────
+   文字盤の上の扇形＝残り時間（減っていく）。オーバーしたら赤い扇形が伸びる。
+   「かくす」モードでは扇形と数字を出さず、針だけ時間と関係ない速さで回す。 */
+const CK_R = 86;   // 扇形の半径
+
+function buildClock_(){
+  let ticks = '';
+  for (let i = 0; i < 60; i++){
+    const major = i % 5 === 0;
+    ticks += '<line x1="0" y1="-100" x2="0" y2="' + (major ? -89 : -95) + '" transform="rotate(' + (i * 6) + ')" class="ck-tick' + (major ? ' major' : '') + '"/>';
+  }
+  document.getElementById('runClock').innerHTML =
+    '<svg viewBox="-110 -110 220 220" aria-hidden="true">' +
+      '<circle r="104" class="ck-face"/>' + ticks +
+      '<path id="ckSector" class="ck-sector"/>' +
+      '<line id="ckEdge" x1="0" y1="0" x2="0" y2="-' + CK_R + '" class="ck-edge"/>' +
+      '<g id="ckSecHand"><line x1="0" y1="0" x2="0" y2="-97" class="ck-sec"/><circle cy="-97" r="4" class="ck-pin"/></g>' +
+      '<circle r="47" class="ck-hole"/>' +
+      '<text id="ckText" y="6" class="ck-text"></text>' +
+      '<text id="ckSub" y="26" class="ck-sub"></text>' +
+    '</svg>';
+}
+
+function clockLoop_(){
+  drawClock_();
+  clockRaf = requestAnimationFrame(clockLoop_);
+}
+
+function drawClock_(){
+  if (!R || R.idx >= R.steps.length) return;
+  const s = R.steps[R.idx];
+  const now = R.pausedAt || Date.now();
+  const elapsed = elapsedMs_() / 1000;
+  const remain = s.targetSec - elapsed;
+  const over = remain < 0;
+  const shown = R.showRemaining;
+
+  let frac = over ? Math.min(1, -remain / s.targetSec) : remain / s.targetSec;
+  const t = (Date.now() - (R.refillAt || 0)) / 700;
+  if (!over && t < 1) frac *= 1 - Math.pow(1 - t, 3);   // 満タンに戻るアニメーション
+
+  const sector = document.getElementById('ckSector');
+  sector.setAttribute('d', shown ? sectorPath_(frac, CK_R) : '');
+  sector.setAttribute('class', 'ck-sector' + (over ? ' over' : ''));
+  const edge = document.getElementById('ckEdge');
+  edge.style.display = shown ? '' : 'none';
+  edge.setAttribute('transform', 'rotate(' + (frac * 360) + ')');
+
+  // 秒針：表示モードは本当の秒、かくすモードは7.3秒で1周（時間の手がかりにならない速さ）
+  const secAngle = shown ? (elapsed % 60) * 6 : (now / 7300 * 360) % 360;
+  document.getElementById('ckSecHand').setAttribute('transform', 'rotate(' + secAngle + ')');
+
+  const text = document.getElementById('ckText');
+  const sub = document.getElementById('ckSub');
+  if (shown){
+    const sec = over ? Math.floor(-remain) : Math.ceil(remain);
+    text.textContent = (over ? '+' : '') + fmtClock(sec);
+    sub.textContent = R.pausedAt ? '一時停止中' : (over ? 'オーバー' : 'のこり');
+  }else{
+    text.textContent = '?';
+    sub.textContent = R.pausedAt ? '一時停止中' : 'かくし中';
+  }
+  text.setAttribute('class', 'ck-text' + (over && shown ? ' over' : '') + (text.textContent.length > 5 ? ' long' : ''));
+  document.getElementById('runClock').classList.toggle('paused', !!R.pausedAt);
+}
+
+/** 12時の位置から時計回りに frac（0〜1）ぶんの扇形 */
+function sectorPath_(frac, r){
+  if (frac <= 0.0005) return '';
+  if (frac >= 0.9995) return 'M0,' + (-r) + 'A' + r + ',' + r + ' 0 1 1 0,' + r + 'A' + r + ',' + r + ' 0 1 1 0,' + (-r) + 'Z';
+  const a = frac * 2 * Math.PI;
+  const x = (r * Math.sin(a)).toFixed(2), y = (-r * Math.cos(a)).toFixed(2);
+  return 'M0,0L0,' + (-r) + 'A' + r + ',' + r + ' 0 ' + (frac > 0.5 ? 1 : 0) + ' 1 ' + x + ',' + y + 'Z';
 }
 
 /** 「できた！次へ」 */
@@ -939,7 +1021,7 @@ function quitRun(){
 }
 
 function finishRun_(quit){
-  clearInterval(tickTimer);
+  stopTimers_();
   const saved = R.results.reduce(function(sum, x){ return sum + (x.targetSec - x.actualSec); }, 0);
   const payload = {
     runId: R.runId, memberId: R.memberId, routineId: R.routineId, date: R.date,
@@ -977,7 +1059,7 @@ function finishRun_(quit){
 }
 
 function closeRun_(){
-  clearInterval(tickTimer);
+  stopTimers_();
   R = null;
   save_('rt_run', null);
   releaseWakeLock_();
