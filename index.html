@@ -66,7 +66,15 @@ h2{font-size:15px; margin:0 0 10px; font-weight:700;}
   width:100%; max-width:380px; text-align:center; box-shadow:0 2px 12px rgba(0,0,0,.06);
 }
 .gate-box .form{text-align:left; margin-top:16px;}
-.logo{font-size:44px; line-height:1; margin-bottom:6px;}
+.logo-clock{width:120px; height:120px; margin:0 auto 10px;}
+.logo-clock svg{width:100%; height:100%; display:block; filter:drop-shadow(0 4px 10px rgba(12,125,109,.25));}
+.lg-face{fill:#fff; stroke:var(--primary-dark); stroke-width:6;}
+.lg-sector{fill:var(--primary); opacity:.85;}
+.lg-tick{stroke:var(--text); stroke-width:4; stroke-linecap:round;}
+.lg-hour{stroke:var(--text); stroke-width:9; stroke-linecap:round;}
+.lg-min{stroke:var(--text); stroke-width:6; stroke-linecap:round;}
+.lg-sec{stroke:#e8590c; stroke-width:2.5; stroke-linecap:round;}
+.lg-pin{fill:#e8590c;}
 .auth-switch{margin-top:14px;}
 .auth-switch a{color:var(--primary-dark); font-weight:700; text-decoration:none;}
 .who-list{display:flex; flex-direction:column; gap:8px; margin-top:16px;}
@@ -352,7 +360,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
 <!-- ── 家庭ログイン／新規登録 ───────────────── -->
 <div id="authGate" class="gate hidden">
   <div class="gate-box">
-    <div class="logo">⏱</div>
+    <div class="logo-clock" id="logoClock"></div>
     <h1>Routine Bank</h1>
 
     <div id="authLogin">
@@ -594,6 +602,7 @@ async function boot(){
 
 function showAuthMode(mode){
   show('authGate', true);
+  startLogoClock_();
   show('authLogin', mode === 'login');
   show('authRegister', mode === 'register');
 }
@@ -913,6 +922,44 @@ function drawClock_(){
   }
   text.setAttribute('class', 'ck-text' + (over && shown ? ' over' : '') + (text.textContent.length > 5 ? ' long' : ''));
   document.getElementById('runClock').classList.toggle('paused', !!R.pausedAt);
+}
+
+/* ── ログイン画面の時計 ─────────────────
+   針は今の時刻。後ろの扇形は「減っては満タンに戻る」をくり返して、アプリの中身を見せる */
+let logoRaf = 0;
+
+function startLogoClock_(){
+  const box = document.getElementById('logoClock');
+  if (!box.firstChild){
+    let ticks = '';
+    for (let i = 0; i < 12; i++){
+      ticks += '<line x1="0" y1="-100" x2="0" y2="-88" transform="rotate(' + (i * 30) + ')" class="lg-tick"/>';
+    }
+    box.innerHTML = '<svg viewBox="-110 -110 220 220" aria-hidden="true">' +
+      '<circle r="106" class="lg-face"/>' +
+      '<path id="lgSector" class="lg-sector"/>' + ticks +
+      '<line id="lgHour" x1="0" y1="8" x2="0" y2="-48" class="lg-hour"/>' +
+      '<line id="lgMin" x1="0" y1="10" x2="0" y2="-74" class="lg-min"/>' +
+      '<line id="lgSec" x1="0" y1="16" x2="0" y2="-84" class="lg-sec"/>' +
+      '<circle r="6" class="lg-pin"/></svg>';
+  }
+  cancelAnimationFrame(logoRaf);
+  const loop = function(){
+    if (document.getElementById('authGate').classList.contains('hidden')) return;  // 画面が消えたら止める
+    const d = new Date();
+    const sec = d.getSeconds() + d.getMilliseconds() / 1000;
+    const min = d.getMinutes() + sec / 60;
+    const hour = d.getHours() % 12 + min / 60;
+    document.getElementById('lgSec').setAttribute('transform', 'rotate(' + sec * 6 + ')');
+    document.getElementById('lgMin').setAttribute('transform', 'rotate(' + min * 6 + ')');
+    document.getElementById('lgHour').setAttribute('transform', 'rotate(' + hour * 30 + ')');
+    // 6秒かけて減り、0.8秒で満タンに戻る
+    const t = (Date.now() % 6800) / 1000;
+    const frac = t < 6 ? 1 - t / 6 : Math.pow((t - 6) / 0.8, 0.5);
+    document.getElementById('lgSector').setAttribute('d', sectorPath_(frac, 94));
+    logoRaf = requestAnimationFrame(loop);
+  };
+  loop();
 }
 
 /** 12時の位置から時計回りに frac（0〜1）ぶんの扇形 */
