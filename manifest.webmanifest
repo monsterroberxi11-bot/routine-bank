@@ -1,6 +1,6 @@
 {
-  "name": "時間貯金タイマー",
-  "short_name": "時間貯金",
+  "name": "Routine Bank",
+  "short_name": "Routine Bank",
   "description": "ルーチンを早く終えた時間を貯金して、ゲーム時間やおこづかいに交換できるタイマー",
   "lang": "ja",
   "start_url": "./",

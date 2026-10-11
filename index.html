@@ -1,12 +1,12 @@
 <!-- ============================================================
-     時間貯金タイマー  ―  画面の骨組み
+     Routine Bank  ―  画面の骨組み
      include('css') / include('js') のところに css.html / js.html の中身が入る
      ============================================================ -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>時間貯金タイマー</title>
+  <title>Routine Bank</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#12a08c">
   <link rel="manifest" href="manifest.webmanifest">
@@ -15,10 +15,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="時間貯金">
+  <meta name="apple-mobile-web-app-title" content="Routine Bank">
   <style>
 /* ============================================================
-   時間貯金タイマー  ―  見た目（スマホ基準。広い画面だけPC用に変える）
+   Routine Bank  ―  見た目（スマホ基準。広い画面だけPC用に変える）
    ============================================================ */
 
 :root{
@@ -345,7 +345,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
 <div id="authGate" class="gate hidden">
   <div class="gate-box">
     <div class="logo">⏱</div>
-    <h1>時間貯金タイマー</h1>
+    <h1>Routine Bank</h1>
 
     <div id="authLogin">
       <p class="muted">家庭名とパスワードでログインしてください。</p>
@@ -386,7 +386,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
 
 <!-- ── 上のバー・タブ ───────────────── -->
 <header class="topbar hidden" id="topbar">
-  <div class="brand">⏱ 時間貯金</div>
+  <div class="brand">⏱ Routine Bank</div>
   <button class="me-chip" id="meChip" onclick="openWho()"></button>
 </header>
 <nav class="tabs hidden" id="tabs"></nav>
@@ -482,7 +482,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
 
 <script>
 /* ============================================================
-   時間貯金タイマー  ―  画面の動き
+   Routine Bank  ―  画面の動き
    ============================================================ */
 
 /* インストール版（PWA）のときは build-pwa.js がここにGASのURLを入れる。
