@@ -337,12 +337,22 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
 .bubble .who{font-size:11px; font-weight:800; color:var(--primary-dark); margin-bottom:2px;}
 .bubble .at{font-size:10.5px; opacity:.7; margin-top:4px; text-align:right;}
 .chat-note{align-self:center; font-size:12px; color:var(--muted); text-align:center;}
+.chat-note a{color:var(--primary-dark); font-weight:700;}
 .chat-input{
   display:flex; gap:8px; align-items:flex-end; padding:10px 12px;
   padding-bottom:calc(10px + env(safe-area-inset-bottom));
   background:var(--card); border-top:1px solid var(--line);
 }
 .chat-input textarea{flex:1; margin:0; resize:none; min-height:44px; max-height:120px;}
+
+.thread-item{
+  display:flex; flex-direction:column; gap:2px; text-align:left; width:100%;
+  border:1px solid var(--line); background:#fff; border-radius:12px; padding:12px 14px; cursor:pointer;
+}
+.thread-item:hover{border-color:var(--primary);}
+.thread-item .top{display:flex; justify-content:space-between; gap:8px; align-items:center;}
+.thread-item .name{font-weight:800; font-size:14.5px;}
+.thread-item .preview{font-size:13px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 
 /* ── ダイアログ・トースト ───────────────── */
 .modal{
@@ -539,6 +549,20 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
   </form>
 </div>
 
+<!-- ── 開発者の受信箱（URLの最後に #dev）───────────────── -->
+<div id="devScreen" class="chat hidden">
+  <div class="chat-top">
+    <button class="btn tiny" onclick="devBack()" id="devBackBtn">← アプリへ</button>
+    <div class="chat-title" id="devTitle">開発者の受信箱</div>
+    <button class="btn tiny" onclick="devRefresh()" aria-label="読み込み直す">↻</button>
+  </div>
+  <div class="chat-body" id="devBody"></div>
+  <form class="chat-input hidden" id="devForm" onsubmit="devSend(); return false;">
+    <textarea id="devText" rows="2" maxlength="1000" placeholder="返信を書く"></textarea>
+    <button class="btn primary" id="devSendBtn" type="submit">返信</button>
+  </form>
+</div>
+
 <!-- ── ダイアログ ───────────────── -->
 <div id="modal" class="modal hidden">
   <div class="modal-box">
@@ -659,6 +683,8 @@ window.addEventListener('load', boot);
 window.addEventListener('online', function(){ flushOutbox(); });
 
 async function boot(){
+  // 開発者の受信箱：URLの最後が #dev のときは、家庭のログインなしでこちらを開く
+  if (location.hash === '#dev'){ show('loading', false); openDevInbox(); return; }
   // Home版：ブラウザが勝手にデータを消さないようにお願いしておく（対応している機種だけ）
   if (IS_LOCAL){ try{ if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){} }
   S.token = load_('rt_token', '');
@@ -1924,6 +1950,120 @@ async function checkChatUnread_(){
     const last = lastDevId_(r.messages);
     show('chatDot', !!last && last !== load_('rt_chat_seen', ''));
   }catch(e){ /* 圏外などは気にしない */ }
+}
+
+
+/* ============================================================
+   7.6 開発者の受信箱（アプリのURL＋#dev）
+   開発者キー（ADMIN_KEY.txt）を一度入れると、この端末に覚えておく
+   ============================================================ */
+
+let devThreadId = '';
+let devThreads = [];
+
+function devKey_(){ return load_('rt_dev_key', ''); }
+
+function devCall_(fnName, args){
+  return feedbackCall_(fnName, Object.assign({ adminKey: devKey_() }, args));
+}
+
+function openDevInbox(){
+  show('devScreen', true);
+  if (!devKey_()) return devAskKey_('');
+  devList_();
+}
+
+function devAskKey_(error){
+  show('devForm', false);
+  document.getElementById('devTitle').textContent = '開発者の受信箱';
+  document.getElementById('devBody').innerHTML =
+    '<div class="card"><h2>開発者キー</h2><p class="muted">開発者だけが知っているキーを入れてください。この端末に覚えておきます。</p>' +
+    '<div class="form"><label>キー<input type="password" id="devKeyInput" autocomplete="off"></label></div>' +
+    '<p class="error">' + esc(error) + '</p>' +
+    '<button class="btn primary block" onclick="devSaveKey()">開く</button></div>';
+}
+
+function devSaveKey(){
+  save_('rt_dev_key', val('devKeyInput'));
+  devList_();
+}
+
+async function devList_(){
+  devThreadId = '';
+  show('devForm', false);
+  document.getElementById('devTitle').textContent = '開発者の受信箱';
+  document.getElementById('devBackBtn').textContent = '← アプリへ';
+  const body = document.getElementById('devBody');
+  body.innerHTML = '<p class="chat-note">読み込み中…</p>';
+  try{
+    devThreads = await devCall_('adminListThreads', {});
+  }catch(err){
+    if (/開発者キー/.test(errText(err))){ save_('rt_dev_key', null); return devAskKey_(errText(err)); }
+    body.innerHTML = '<p class="chat-note">⚠️ ' + esc(errText(err)) + '</p>';
+    return;
+  }
+  const waiting = devThreads.filter(function(t){ return t.needsReply; }).length;
+  body.innerHTML = '<p class="chat-note">' + devThreads.length + '件のやりとり・未返信 ' + waiting + '件</p>' +
+    devThreads.map(function(t, i){
+      return '<button class="thread-item" onclick="devOpen(' + i + ')"><div class="top"><span class="name">' +
+        esc(t.name || '名前なし') + (t.familyName ? '（' + esc(t.familyName) + '）' : '') + '</span>' +
+        (t.needsReply ? '<span class="badge pending">未返信</span>' : '<span class="badge ok">返信済</span>') + '</div>' +
+        '<div class="preview">' + esc(t.lastText) + '</div>' +
+        '<div class="muted" style="font-size:11.5px">' + esc(t.app) + '・' + esc(String(t.lastAt).slice(5, 16)) + '・' + t.count + '件</div></button>';
+    }).join('') +
+    '<p class="chat-note"><a href="#" onclick="save_(\'rt_dev_key\', null); devAskKey_(\'\'); return false;">この端末からキーを消す</a></p>';
+}
+
+async function devOpen(i){
+  const t = devThreads[i];
+  devThreadId = t.threadId;
+  document.getElementById('devTitle').textContent = (t.name || '名前なし') + (t.familyName ? '（' + t.familyName + '）' : '');
+  document.getElementById('devBackBtn').textContent = '← 一覧';
+  show('devForm', true);
+  document.getElementById('devBody').innerHTML = '<p class="chat-note">読み込み中…</p>';
+  try{
+    const r = await devCall_('adminGetThread', { threadId: devThreadId });
+    devRenderThread_(r.messages);
+  }catch(err){ toastErr(err); }
+}
+
+/** 開発者から見た画面：相手のメッセージは左、自分（開発者）の返信は右 */
+function devRenderThread_(messages){
+  const t = devThreads.filter(function(x){ return x.threadId === devThreadId; })[0] || {};
+  const body = document.getElementById('devBody');
+  body.innerHTML = '<p class="chat-note">' + esc(t.app || '') + '</p>' + messages.map(function(m){
+    const mine = m.from === 'dev';
+    return '<div class="bubble ' + (mine ? 'me' : 'dev') + '">' + (mine ? '' : '<div class="who">' + esc(t.name || '相手') + '</div>') +
+      esc(m.text) + (m.at ? '<div class="at">' + esc(m.at.slice(5, 16)) + '</div>' : '') + '</div>';
+  }).join('');
+  body.scrollTop = body.scrollHeight;
+}
+
+async function devSend(){
+  const box = document.getElementById('devText');
+  const text = box.value.trim();
+  if (!text || !devThreadId) return;
+  const btn = document.getElementById('devSendBtn');
+  btn.disabled = true;
+  try{
+    const r = await devCall_('adminReply', { threadId: devThreadId, message: text });
+    box.value = '';
+    devRenderThread_(r.messages);
+    toast('返信しました', 'ok');
+  }catch(err){ toastErr(err); }
+  finally{ btn.disabled = false; }
+}
+
+function devBack(){
+  if (devThreadId) return devList_();
+  history.replaceState(null, '', location.pathname + location.search);
+  location.reload();
+}
+
+function devRefresh(){
+  if (!devThreadId) return devList_();
+  const i = devThreads.findIndex(function(t){ return t.threadId === devThreadId; });
+  if (i >= 0) devOpen(i);
 }
 
 

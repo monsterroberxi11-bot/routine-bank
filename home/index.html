@@ -337,12 +337,22 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
 .bubble .who{font-size:11px; font-weight:800; color:var(--primary-dark); margin-bottom:2px;}
 .bubble .at{font-size:10.5px; opacity:.7; margin-top:4px; text-align:right;}
 .chat-note{align-self:center; font-size:12px; color:var(--muted); text-align:center;}
+.chat-note a{color:var(--primary-dark); font-weight:700;}
 .chat-input{
   display:flex; gap:8px; align-items:flex-end; padding:10px 12px;
   padding-bottom:calc(10px + env(safe-area-inset-bottom));
   background:var(--card); border-top:1px solid var(--line);
 }
 .chat-input textarea{flex:1; margin:0; resize:none; min-height:44px; max-height:120px;}
+
+.thread-item{
+  display:flex; flex-direction:column; gap:2px; text-align:left; width:100%;
+  border:1px solid var(--line); background:#fff; border-radius:12px; padding:12px 14px; cursor:pointer;
+}
+.thread-item:hover{border-color:var(--primary);}
+.thread-item .top{display:flex; justify-content:space-between; gap:8px; align-items:center;}
+.thread-item .name{font-weight:800; font-size:14.5px;}
+.thread-item .preview{font-size:13px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 
 /* ── ダイアログ・トースト ───────────────── */
 .modal{
@@ -536,6 +546,20 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
   <form class="chat-input" onsubmit="sendChat(); return false;">
     <textarea id="chatText" rows="2" maxlength="1000" placeholder="こうしてほしい、ここが動かない…など"></textarea>
     <button class="btn primary" id="chatSend" type="submit">送信</button>
+  </form>
+</div>
+
+<!-- ── 開発者の受信箱（URLの最後に #dev）───────────────── -->
+<div id="devScreen" class="chat hidden">
+  <div class="chat-top">
+    <button class="btn tiny" onclick="devBack()" id="devBackBtn">← アプリへ</button>
+    <div class="chat-title" id="devTitle">開発者の受信箱</div>
+    <button class="btn tiny" onclick="devRefresh()" aria-label="読み込み直す">↻</button>
+  </div>
+  <div class="chat-body" id="devBody"></div>
+  <form class="chat-input hidden" id="devForm" onsubmit="devSend(); return false;">
+    <textarea id="devText" rows="2" maxlength="1000" placeholder="返信を書く"></textarea>
+    <button class="btn primary" id="devSendBtn" type="submit">返信</button>
   </form>
 </div>
 
@@ -836,8 +860,13 @@ const HEAD_EXCHANGE = ['申請ID', '家庭ID', '申請日時', 'メンバーID',
                        '使う秒', '換算値', '単位', 'メモ', '状態', '処理日時', '処理者ID', '処理者名', '却下理由'];
 const HEAD_ERRORLOG = ['日時', '家庭ID', '関数名', 'エラー内容', 'スタック'];
 // 要望チャット。1行＝1メッセージ。スレッドID＝送った端末ごとのランダムな番号（ログイン不要・Home版からも送れる）
-// 開発者の返信は、その行の【返信】列にスプレッドシートで直接書くだけ（相手のチャットに表示される）
-const HEAD_FEEDBACK = ['メッセージID', '日時', 'スレッドID', 'アプリ', '家庭名', '名前', '内容', '返信', '状態'];
+// 開発者の返信は2通り：①開発者用の受信箱（アプリのURL＋#dev）から送る → 【送信者】＝開発者 の行が増える
+//                     ②その行の【返信】列にスプレッドシートで直接書く
+// 【送信者】はあとから足した列。空の行は利用者のメッセージとして扱う
+const HEAD_FEEDBACK = ['メッセージID', '日時', 'スレッドID', 'アプリ', '家庭名', '名前', '内容', '返信', '状態', '送信者'];
+const FB_FROM_DEV = '開発者';
+// 開発者キーのSHA-256（キーそのものは書かない。Home版ではこのファイルが公開されるため）
+const ADMIN_KEY_HASH = 'fced3130fafb8a87f3f4335b8353aadd446da7f0be6bd9a0ff78e913ac49624b';
 
 const ALL_SHEETS = [
   [SHEET_FAMILY, HEAD_FAMILY], [SHEET_SESSION, HEAD_SESSION], [SHEET_MEMBER, HEAD_MEMBER],
@@ -846,7 +875,7 @@ const ALL_SHEETS = [
   [SHEET_FEEDBACK, HEAD_FEEDBACK]
 ];
 // 見出しを変えたらこの番号を上げる → 次の呼び出しで自動的にシートが整う
-const SCHEMA_VERSION = '3';
+const SCHEMA_VERSION = '4';
 
 // ── 状態 ────────────────────────────────
 const ROLE_PARENT = '親';
@@ -888,7 +917,8 @@ const API_FUNCTIONS = {
   getExchanges: getExchanges, getHistory: getHistory, getAnalysis: getAnalysis, cancelRun: cancelRun,
   verifyParentPin: verifyParentPin, saveMember: saveMember, saveRoutine: saveRoutine,
   saveReward: saveReward, changeFamilyPassword: changeFamilyPassword,
-  sendFeedback: sendFeedback, getFeedbackThread: getFeedbackThread
+  sendFeedback: sendFeedback, getFeedbackThread: getFeedbackThread,
+  adminListThreads: adminListThreads, adminGetThread: adminGetThread, adminReply: adminReply
 };
 
 function doPost(e) {
@@ -1725,7 +1755,7 @@ function feedbackThread_(threadId) {
   readSheet_(SHEET_FEEDBACK)
     .filter(function (r) { return r['スレッドID'] === threadId; })
     .forEach(function (r) {
-      out.push({ id: r['メッセージID'], at: r['日時'], from: 'me', text: r['内容'] });
+      out.push({ id: r['メッセージID'], at: r['日時'], from: r['送信者'] === FB_FROM_DEV ? 'dev' : 'me', text: r['内容'] });
       if (String(r['返信'] || '').trim()) out.push({ id: r['メッセージID'] + '-r', at: '', from: 'dev', text: r['返信'] });
     });
   return out;
@@ -1741,14 +1771,14 @@ function sendFeedback(args) {
     return withLock_(function () {
       const today = todayStr_();
       const sentToday = readSheet_(SHEET_FEEDBACK).filter(function (r) {
-        return r['スレッドID'] === threadId && String(r['日時']).slice(0, 10) === today;
+        return r['スレッドID'] === threadId && r['送信者'] !== FB_FROM_DEV && String(r['日時']).slice(0, 10) === today;
       }).length;
       if (sentToday >= FB_DAILY_LIMIT) throw new Error('今日はこれ以上送れません。また明日送ってください');
       appendRow_(SHEET_FEEDBACK, HEAD_FEEDBACK, {
         'メッセージID': nextId_(SHEET_FEEDBACK, 'C'), '日時': nowStr_(), 'スレッドID': threadId,
         'アプリ': args.app === 'home' ? 'Routine Bank Home' : 'Routine Bank',
         '家庭名': String(args.familyName || '').slice(0, 40), '名前': String(args.name || '').slice(0, 40),
-        '内容': text, '返信': '', '状態': '未対応'
+        '内容': text, '返信': '', '状態': '未対応', '送信者': '利用者'
       });
       return { messages: feedbackThread_(threadId) };
     });
@@ -1759,6 +1789,72 @@ function sendFeedback(args) {
 function getFeedbackThread(args) {
   return guarded_('getFeedbackThread', function () {
     return { messages: feedbackThread_(checkThreadId_(args && args.threadId)) };
+  });
+}
+
+
+/* ── 開発者用の受信箱（アプリのURL＋#dev から使う）──────────── */
+
+function requireAdmin_(key) {
+  if (!key || sha256Hex_(String(key)) !== ADMIN_KEY_HASH) throw new Error('開発者キーが違います');
+}
+
+/** スレッドの一覧（新しい順）。args = {adminKey} */
+function adminListThreads(args) {
+  return guarded_('adminListThreads', function () {
+    requireAdmin_(args && args.adminKey);
+    const byId = {};
+    const order = [];
+    readSheet_(SHEET_FEEDBACK).forEach(function (r) {
+      const id = r['スレッドID'];
+      if (!id) return;
+      let t = byId[id];
+      if (!t) { t = byId[id] = { threadId: id, app: '', familyName: '', name: '', count: 0 }; order.push(t); }
+      const fromDev = r['送信者'] === FB_FROM_DEV || String(r['返信'] || '').trim() !== '';
+      if (r['送信者'] !== FB_FROM_DEV) {   // 相手の情報は利用者のメッセージから取る
+        t.app = r['アプリ'] || t.app;
+        t.familyName = r['家庭名'] || t.familyName;
+        t.name = r['名前'] || t.name;
+      }
+      t.count++;
+      t.lastAt = r['日時'];
+      t.lastText = String(r['返信'] || '').trim() || r['内容'];
+      t.needsReply = !fromDev;   // 最後が利用者のメッセージなら「未返信」
+    });
+    return order.sort(function (a, b) { return a.lastAt < b.lastAt ? 1 : -1; });
+  });
+}
+
+/** args = {adminKey, threadId} */
+function adminGetThread(args) {
+  return guarded_('adminGetThread', function () {
+    requireAdmin_(args && args.adminKey);
+    return { messages: feedbackThread_(checkThreadId_(args.threadId)) };
+  });
+}
+
+/** 開発者として返信する。args = {adminKey, threadId, message} */
+function adminReply(args) {
+  return guarded_('adminReply', function () {
+    requireAdmin_(args && args.adminKey);
+    const threadId = checkThreadId_(args.threadId);
+    const text = String(args.message || '').trim();
+    if (!text) throw new Error('メッセージを入力してください');
+    if (text.length > FB_MAX_LENGTH) throw new Error(FB_MAX_LENGTH + '文字以内にしてください');
+    return withLock_(function () {
+      const rows = readSheet_(SHEET_FEEDBACK).filter(function (r) { return r['スレッドID'] === threadId; });
+      if (!rows.length) throw new Error('このやりとりが見つかりません');
+      const first = rows[0];
+      appendRow_(SHEET_FEEDBACK, HEAD_FEEDBACK, {
+        'メッセージID': nextId_(SHEET_FEEDBACK, 'C'), '日時': nowStr_(), 'スレッドID': threadId,
+        'アプリ': first['アプリ'], '家庭名': first['家庭名'], '名前': '開発者', '内容': text,
+        '返信': '', '状態': '', '送信者': FB_FROM_DEV
+      });
+      rows.forEach(function (r) {
+        if (r['状態'] === '未対応') updateRow_(SHEET_FEEDBACK, HEAD_FEEDBACK, r._row, { '状態': '返信済' });
+      });
+      return { messages: feedbackThread_(threadId) };
+    });
   });
 }
 
@@ -1870,6 +1966,8 @@ window.addEventListener('load', boot);
 window.addEventListener('online', function(){ flushOutbox(); });
 
 async function boot(){
+  // 開発者の受信箱：URLの最後が #dev のときは、家庭のログインなしでこちらを開く
+  if (location.hash === '#dev'){ show('loading', false); openDevInbox(); return; }
   // Home版：ブラウザが勝手にデータを消さないようにお願いしておく（対応している機種だけ）
   if (IS_LOCAL){ try{ if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){} }
   S.token = load_('rt_token', '');
@@ -3135,6 +3233,120 @@ async function checkChatUnread_(){
     const last = lastDevId_(r.messages);
     show('chatDot', !!last && last !== load_('rt_chat_seen', ''));
   }catch(e){ /* 圏外などは気にしない */ }
+}
+
+
+/* ============================================================
+   7.6 開発者の受信箱（アプリのURL＋#dev）
+   開発者キー（ADMIN_KEY.txt）を一度入れると、この端末に覚えておく
+   ============================================================ */
+
+let devThreadId = '';
+let devThreads = [];
+
+function devKey_(){ return load_('rt_dev_key', ''); }
+
+function devCall_(fnName, args){
+  return feedbackCall_(fnName, Object.assign({ adminKey: devKey_() }, args));
+}
+
+function openDevInbox(){
+  show('devScreen', true);
+  if (!devKey_()) return devAskKey_('');
+  devList_();
+}
+
+function devAskKey_(error){
+  show('devForm', false);
+  document.getElementById('devTitle').textContent = '開発者の受信箱';
+  document.getElementById('devBody').innerHTML =
+    '<div class="card"><h2>開発者キー</h2><p class="muted">開発者だけが知っているキーを入れてください。この端末に覚えておきます。</p>' +
+    '<div class="form"><label>キー<input type="password" id="devKeyInput" autocomplete="off"></label></div>' +
+    '<p class="error">' + esc(error) + '</p>' +
+    '<button class="btn primary block" onclick="devSaveKey()">開く</button></div>';
+}
+
+function devSaveKey(){
+  save_('rt_dev_key', val('devKeyInput'));
+  devList_();
+}
+
+async function devList_(){
+  devThreadId = '';
+  show('devForm', false);
+  document.getElementById('devTitle').textContent = '開発者の受信箱';
+  document.getElementById('devBackBtn').textContent = '← アプリへ';
+  const body = document.getElementById('devBody');
+  body.innerHTML = '<p class="chat-note">読み込み中…</p>';
+  try{
+    devThreads = await devCall_('adminListThreads', {});
+  }catch(err){
+    if (/開発者キー/.test(errText(err))){ save_('rt_dev_key', null); return devAskKey_(errText(err)); }
+    body.innerHTML = '<p class="chat-note">⚠️ ' + esc(errText(err)) + '</p>';
+    return;
+  }
+  const waiting = devThreads.filter(function(t){ return t.needsReply; }).length;
+  body.innerHTML = '<p class="chat-note">' + devThreads.length + '件のやりとり・未返信 ' + waiting + '件</p>' +
+    devThreads.map(function(t, i){
+      return '<button class="thread-item" onclick="devOpen(' + i + ')"><div class="top"><span class="name">' +
+        esc(t.name || '名前なし') + (t.familyName ? '（' + esc(t.familyName) + '）' : '') + '</span>' +
+        (t.needsReply ? '<span class="badge pending">未返信</span>' : '<span class="badge ok">返信済</span>') + '</div>' +
+        '<div class="preview">' + esc(t.lastText) + '</div>' +
+        '<div class="muted" style="font-size:11.5px">' + esc(t.app) + '・' + esc(String(t.lastAt).slice(5, 16)) + '・' + t.count + '件</div></button>';
+    }).join('') +
+    '<p class="chat-note"><a href="#" onclick="save_(\'rt_dev_key\', null); devAskKey_(\'\'); return false;">この端末からキーを消す</a></p>';
+}
+
+async function devOpen(i){
+  const t = devThreads[i];
+  devThreadId = t.threadId;
+  document.getElementById('devTitle').textContent = (t.name || '名前なし') + (t.familyName ? '（' + t.familyName + '）' : '');
+  document.getElementById('devBackBtn').textContent = '← 一覧';
+  show('devForm', true);
+  document.getElementById('devBody').innerHTML = '<p class="chat-note">読み込み中…</p>';
+  try{
+    const r = await devCall_('adminGetThread', { threadId: devThreadId });
+    devRenderThread_(r.messages);
+  }catch(err){ toastErr(err); }
+}
+
+/** 開発者から見た画面：相手のメッセージは左、自分（開発者）の返信は右 */
+function devRenderThread_(messages){
+  const t = devThreads.filter(function(x){ return x.threadId === devThreadId; })[0] || {};
+  const body = document.getElementById('devBody');
+  body.innerHTML = '<p class="chat-note">' + esc(t.app || '') + '</p>' + messages.map(function(m){
+    const mine = m.from === 'dev';
+    return '<div class="bubble ' + (mine ? 'me' : 'dev') + '">' + (mine ? '' : '<div class="who">' + esc(t.name || '相手') + '</div>') +
+      esc(m.text) + (m.at ? '<div class="at">' + esc(m.at.slice(5, 16)) + '</div>' : '') + '</div>';
+  }).join('');
+  body.scrollTop = body.scrollHeight;
+}
+
+async function devSend(){
+  const box = document.getElementById('devText');
+  const text = box.value.trim();
+  if (!text || !devThreadId) return;
+  const btn = document.getElementById('devSendBtn');
+  btn.disabled = true;
+  try{
+    const r = await devCall_('adminReply', { threadId: devThreadId, message: text });
+    box.value = '';
+    devRenderThread_(r.messages);
+    toast('返信しました', 'ok');
+  }catch(err){ toastErr(err); }
+  finally{ btn.disabled = false; }
+}
+
+function devBack(){
+  if (devThreadId) return devList_();
+  history.replaceState(null, '', location.pathname + location.search);
+  location.reload();
+}
+
+function devRefresh(){
+  if (!devThreadId) return devList_();
+  const i = devThreads.findIndex(function(t){ return t.threadId === devThreadId; });
+  if (i >= 0) devOpen(i);
 }
 
 
