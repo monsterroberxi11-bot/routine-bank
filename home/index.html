@@ -100,9 +100,12 @@ h2{font-size:15px; margin:0 0 10px; font-weight:700;}
 .brand{font-weight:800; color:var(--primary-dark);}
 .top-right{display:flex; align-items:center; gap:8px;}
 .chat-btn{
-  position:relative; border:1px solid var(--line); background:#fff; border-radius:999px;
-  width:38px; height:34px; font-size:16px; cursor:pointer; line-height:1;
+  position:relative; display:flex; align-items:center; gap:4px;
+  border:2px solid var(--primary); background:#fff; color:var(--primary-dark); border-radius:999px;
+  height:34px; padding:0 12px 0 10px; font-size:16px; font-weight:800; cursor:pointer; line-height:1;
 }
+.chat-btn:hover{background:var(--primary); color:#fff;}
+.chat-label{font-size:13px;}
 .chat-btn .dot{top:-5px; left:auto; right:-6px;}
 .me-chip{
   border:1px solid var(--line); background:#fff; border-radius:999px;
@@ -455,7 +458,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
 <header class="topbar hidden" id="topbar">
   <div class="brand">⏱ Routine Bank Home</div>
   <div class="top-right">
-    <button class="chat-btn" id="chatBtn" onclick="openChat()" aria-label="要望・お問い合わせ">💬<span class="dot hidden" id="chatDot">!</span></button>
+    <button class="chat-btn" id="chatBtn" onclick="openChat()" aria-label="要望・お問い合わせ">💬<span class="chat-label">要望</span><span class="dot hidden" id="chatDot">!</span></button>
     <button class="me-chip" id="meChip" onclick="openWho()"></button>
   </div>
 </header>
