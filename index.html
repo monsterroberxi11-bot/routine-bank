@@ -747,7 +747,9 @@ function renderTimerView(){
     return '<button class="routine" onclick="startRun(\'' + r.id + '\')">' +
       '<span class="play">▶</span><span><div class="name">' + esc(r.name) + '</div>' +
       '<div class="sub">' + r.steps.length + 'こ・目標 ' + fmtDur(total) + '</div></span></button>';
-  }).join('') || '<p class="empty">使えるルーチンがありません。親が「設定」から作ってください</p>';
+  }).join('') || '<p class="empty">使えるルーチンがありません</p>';
+  document.getElementById('routineList').insertAdjacentHTML('beforeend',
+    '<button class="btn block" onclick="editRoutine(\'\')">＋ ルーチンを作る</button>');
   renderOutbox();
 }
 
@@ -1404,19 +1406,19 @@ function renderSettings(){
     '<div class="btn-row"><button class="btn" onclick="openWho()">使う人を変える</button>' +
     '<button class="btn danger" onclick="logout()">ログアウト</button></div></div>';
 
+  if (!unlocked){
+    const mine = S.routines.filter(function(r){ return r.createdBy === S.me; });
+    html += '<div class="card"><div class="card-head"><h2>自分で作ったルーチン</h2><button class="btn tiny primary" onclick="editRoutine(\'\')">＋ 作る</button></div><div class="list">' +
+      (mine.map(routineItem_).join('') || '<p class="empty">まだありません</p>') + '</div></div>';
+  }
   if (!isParent){
-    html += '<div class="card"><p class="muted">ルーチンや交換先の変更は、親が自分のスマホ（または「使う人」を親にして）から行います。</p></div>';
+    html += '<div class="card"><p class="muted">ほかのルーチン・交換先・メンバーの変更は、親が行います。</p></div>';
   }else if (!unlocked){
     html += '<div class="card"><h2>🔒 親の設定</h2><p class="muted">ルーチン・交換先・メンバーの変更にはPINが必要です。</p>' +
       '<button class="btn primary" onclick="unlockSettings()">PINを入れて開く</button></div>';
   }else{
     html += '<div class="card"><div class="card-head"><h2>ルーチン</h2><button class="btn tiny primary" onclick="editRoutine(\'\')">＋ 追加</button></div><div class="list">' +
-      S.routines.map(function(r){
-        const who = r.memberId ? (member_(r.memberId) || { name: '?' }).name + '用' : 'みんな';
-        return '<div class="list-item"><div class="main"><div class="title">' + esc(r.name) + (r.active ? '' : ' <span class="badge gray">停止中</span>') + '</div>' +
-          '<div class="sub">' + who + '・' + r.steps.length + 'こ・' + r.steps.map(function(s){ return esc(s.name); }).join(' → ') + '</div></div>' +
-          '<div class="actions"><button class="btn tiny" onclick="editRoutine(\'' + r.id + '\')">編集</button></div></div>';
-      }).join('') + '</div></div>';
+      S.routines.map(routineItem_).join('') + '</div></div>';
 
     html += '<div class="card"><div class="card-head"><h2>交換先</h2><button class="btn tiny primary" onclick="editReward(\'\')">＋ 追加</button></div><div class="list">' +
       S.rewards.map(function(w){
@@ -1435,6 +1437,13 @@ function renderSettings(){
     html += '<div class="card"><h2>家庭のパスワード</h2><button class="btn" onclick="changePassword()">パスワードを変える</button></div>';
   }
   document.getElementById('settings').innerHTML = html;
+}
+
+function routineItem_(r){
+  const who = r.memberId ? (member_(r.memberId) || { name: '?' }).name + '用' : 'みんな';
+  return '<div class="list-item"><div class="main"><div class="title">' + esc(r.name) + (r.active ? '' : ' <span class="badge gray">停止中</span>') + '</div>' +
+    '<div class="sub">' + who + '・' + r.steps.length + 'こ・' + r.steps.map(function(s){ return esc(s.name); }).join(' → ') + '</div></div>' +
+    '<div class="actions"><button class="btn tiny" onclick="editRoutine(\'' + r.id + '\')">編集</button></div></div>';
 }
 
 async function unlockSettings(){
@@ -1490,9 +1499,9 @@ function editRoutine(id){
     title: id ? 'ルーチンを編集' : 'ルーチンを追加',
     body: '<div class="form">' +
       '<label>ルーチン名<input type="text" id="rtName" value="' + esc(r.name) + '" placeholder="例：朝の支度"></label>' +
-      '<label>だれ用？<select id="rtMember"><option value="">みんな</option>' + S.members.filter(function(m){ return m.active; }).map(function(m){
+      (isParent_(S.me) ? '<label>だれ用？<select id="rtMember"><option value="">みんな</option>' + S.members.filter(function(m){ return m.active; }).map(function(m){
         return '<option value="' + m.id + '"' + (m.id === r.memberId ? ' selected' : '') + '>' + esc(m.name) + '</option>';
-      }).join('') + '</select></label>' +
+      }).join('') + '</select></label>' : '<p class="muted">このルーチンは自分専用になります。</p>') +
       '<label>表示順<input type="number" id="rtOrder" value="' + r.order + '"></label>' +
       '<label class="inline"><input type="checkbox" id="rtActive"' + (r.active ? ' checked' : '') + '> 使う（はずすと一覧に出ません）</label>' +
       '<h2 style="margin-top:6px">動作（上から順番）</h2><div id="stepRows"></div>' +
@@ -1504,10 +1513,18 @@ function editRoutine(id){
         return { id: row.dataset.id, name: row.querySelector('.sn').value,
                  targetSec: (Number(row.querySelector('.sm').value) || 0) * 60 + (Number(row.querySelector('.ss').value) || 0) };
       });
-      return saveSetting_('saveRoutine', { routineId: r.id, name: val('rtName'), memberId: val('rtMember'),
+      return saveRoutine_({ routineId: r.id, name: val('rtName'), memberId: val('rtMember'),
         order: Number(val('rtOrder')), active: document.getElementById('rtActive').checked, steps: steps });
     }
   });
+}
+
+/** 自分が作ったルーチンはPINなし、ほかの人のものは親PINを聞いてから保存 */
+async function saveRoutine_(args){
+  if (args.routineId && S.routines.filter(function(x){ return x.id === args.routineId; })[0].createdBy !== S.me){
+    if (!(await needPin())) throw new Error('PINの確認をやめました');
+  }
+  return saveSetting_('saveRoutine', args);
 }
 
 function addStepRow(s){
