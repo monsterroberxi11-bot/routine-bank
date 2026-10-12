@@ -1,6 +1,6 @@
 {
-  "name": "Routine Bank Home",
-  "short_name": "RB Home",
+  "name": "Routine Bank Offline",
+  "short_name": "RB Offline",
   "description": "1台のスマホを家族で使う時間貯金タイマー。登録もネットもいらず、データはスマホの中に保存",
   "lang": "ja",
   "start_url": "./",

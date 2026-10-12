@@ -590,7 +590,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
    GASのWebアプリとして開いたときは空のまま → google.script.run を使う */
 const API_URL = "https://script.google.com/macros/s/AKfycbwYVPlYAM3Xel3O8NP3bErPGCtzW9Mua5WtuWhOv6VHIaDDmb_oT354htcyXW-SFjgboQ/exec";
 
-/* Routine Bank Home（build-pwa.js --home）では、サーバーの処理（Code.gs）をこのページの中で動かす。
+/* Routine Bank Offline（build-pwa.js --home）では、サーバーの処理（Code.gs）をこのページの中で動かす。
    そのとき LOCAL_API が用意される。データはこのスマホの中だけに保存（ログイン・ネット不要） */
 const IS_LOCAL = typeof LOCAL_API !== 'undefined';
 

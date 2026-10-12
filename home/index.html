@@ -6,7 +6,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <title>Routine Bank Home</title>
+  <title>Routine Bank Offline</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#12a08c">
   <link rel="manifest" href="manifest.webmanifest">
@@ -15,7 +15,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Routine Bank Home">
+  <meta name="apple-mobile-web-app-title" content="Routine Bank Offline">
   <style>
 /* ============================================================
    Routine Bank  ―  見た目（スマホ基準。広い画面だけPC用に変える）
@@ -415,7 +415,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
 <div id="authGate" class="gate hidden">
   <div class="gate-box">
     <div class="logo-clock" id="logoClock"></div>
-    <h1>Routine Bank Home</h1>
+    <h1>Routine Bank Offline</h1>
 
     <div id="authLogin">
       <p class="muted">家庭名とパスワードでログインしてください。</p>
@@ -456,7 +456,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
 
 <!-- ── 上のバー・タブ ───────────────── -->
 <header class="topbar hidden" id="topbar">
-  <div class="brand">⏱ Routine Bank Home</div>
+  <div class="brand">⏱ Routine Bank Offline</div>
   <div class="top-right">
     <button class="chat-btn" id="chatBtn" onclick="openChat()" aria-label="要望・お問い合わせ">💬<span class="chat-label">要望</span><span class="dot hidden" id="chatDot">!</span></button>
     <button class="me-chip" id="meChip" onclick="openWho()"></button>
@@ -583,7 +583,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
 
 <script>
 /* ============================================================
-   Routine Bank Home  ―  サーバー（Code.gs）をスマホの中で動かすための土台
+   Routine Bank Offline  ―  サーバー（Code.gs）をスマホの中で動かすための土台
    build-pwa.js --home がこのファイルと Code.gs を index.html に埋め込む。
 
    GASの SpreadsheetApp などを「にせもの」で用意して、データはスマホの localStorage に保存する。
@@ -795,7 +795,7 @@ const LocalStore = (function () {
 
   function importAll(text) {
     const obj = JSON.parse(text);
-    if (!obj || obj.app !== 'routine-bank-home' || !obj.data) throw new Error('Routine Bank Home のバックアップファイルではありません');
+    if (!obj || obj.app !== 'routine-bank-home' || !obj.data) throw new Error('Routine Bank Offline のバックアップファイルではありません');
     allKeys().forEach(function (k) { localStorage.removeItem(k); });
     Object.keys(obj.data).forEach(function (k) { if (k.indexOf(PREFIX) === 0) localStorage.setItem(k, obj.data[k]); });
     rollback();
@@ -1779,7 +1779,7 @@ function sendFeedback(args) {
       if (sentToday >= FB_DAILY_LIMIT) throw new Error('今日はこれ以上送れません。また明日送ってください');
       appendRow_(SHEET_FEEDBACK, HEAD_FEEDBACK, {
         'メッセージID': nextId_(SHEET_FEEDBACK, 'C'), '日時': nowStr_(), 'スレッドID': threadId,
-        'アプリ': args.app === 'home' ? 'Routine Bank Home' : 'Routine Bank',
+        'アプリ': args.app === 'home' ? 'Routine Bank Offline' : 'Routine Bank',
         '家庭名': String(args.familyName || '').slice(0, 40), '名前': String(args.name || '').slice(0, 40),
         '内容': text, '返信': '', '状態': '未対応', '送信者': '利用者'
       });
@@ -1873,7 +1873,7 @@ return API_FUNCTIONS;
    GASのWebアプリとして開いたときは空のまま → google.script.run を使う */
 const API_URL = '';
 
-/* Routine Bank Home（build-pwa.js --home）では、サーバーの処理（Code.gs）をこのページの中で動かす。
+/* Routine Bank Offline（build-pwa.js --home）では、サーバーの処理（Code.gs）をこのページの中で動かす。
    そのとき LOCAL_API が用意される。データはこのスマホの中だけに保存（ログイン・ネット不要） */
 const IS_LOCAL = typeof LOCAL_API !== 'undefined';
 
