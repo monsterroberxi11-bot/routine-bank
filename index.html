@@ -826,7 +826,8 @@ async function logout(){
 function renderNav(){
   const html = function(isBottom){
     return VIEWS.map(function(v){
-      const dot = v.key === 'bank' && S.pendingCount ? '<span class="dot">' + S.pendingCount + '</span>' : '';
+      const n = v.key === 'bank' ? S.pendingCount : (v.key === 'settings' && isParent_(S.me) ? routineRequests_().length : 0);
+      const dot = n ? '<span class="dot">' + n + '</span>' : '';
       return '<button class="' + (S.view === v.key ? 'active' : '') + '" onclick="switchView(\'' + v.key + '\')">' +
         (isBottom ? '<span class="ico">' + v.ico + '</span>' : v.ico + ' ') + v.label + dot + '</button>';
     }).join('');
@@ -870,6 +871,9 @@ function renderTimerView(){
       '<span class="play">▶</span><span><div class="name">' + esc(r.name) + '</div>' +
       '<div class="sub">' + r.steps.length + 'こ・目標 ' + fmtDur(total) + '</div></span></button>';
   }).join('') || '<p class="empty">使えるルーチンがありません</p>';
+  const waiting = S.routines.filter(function(r){ return r.createdBy === S.me && isRequesting_(r); }).length;
+  if (waiting) document.getElementById('routineList').insertAdjacentHTML('beforeend',
+    '<p class="muted">⏳ 親の承認待ちのルーチンが ' + waiting + 'こ あります</p>');
   document.getElementById('routineList').insertAdjacentHTML('beforeend',
     '<button class="btn block" onclick="editRoutine(\'\')">＋ ルーチンを作る</button>');
   renderOutbox();
@@ -877,9 +881,13 @@ function renderTimerView(){
 
 function myRoutines_(){
   return S.routines.filter(function(r){
-    return r.active && r.steps.length && (!r.memberId || r.memberId === S.me);
+    return r.approved && r.active && r.steps.length && (!r.memberId || r.memberId === S.me);
   });
 }
+
+/** 子どもの申請が親の承認待ちか（却下されたものは含まない） */
+function isRequesting_(r){ return !!r.request && !r.rejectReason; }
+function routineRequests_(){ return S.routines.filter(isRequesting_); }
 
 function setShowRemaining(on){ save_('rt_show', !!on); }
 
@@ -1580,6 +1588,10 @@ function renderSettings(){
     (IS_LOCAL ? '' : '<button class="btn danger" onclick="logout()">ログアウト</button>') + '</div></div>' +
     voiceCard_() + (IS_LOCAL ? backupCard_() : '');
 
+  if (isParent){
+    const reqs = routineRequests_();
+    if (reqs.length) html += '<div class="card"><h2>🆕 ルーチンの承認待ち</h2><div class="list">' + reqs.map(routineRequestItem_).join('') + '</div></div>';
+  }
   if (!unlocked){
     const mine = S.routines.filter(function(r){ return r.createdBy === S.me; });
     html += '<div class="card"><div class="card-head"><h2>自分で作ったルーチン</h2><button class="btn tiny primary" onclick="editRoutine(\'\')">＋ 作る</button></div><div class="list">' +
@@ -1615,10 +1627,53 @@ function renderSettings(){
 
 function routineItem_(r){
   const who = r.memberId ? (member_(r.memberId) || { name: '?' }).name + '用' : 'みんな';
-  return '<div class="list-item"><div class="main"><div class="title">' + esc(r.name) + (r.active ? '' : ' <span class="badge gray">停止中</span>') + '</div>' +
-    '<div class="sub">' + who + '・' + r.steps.length + 'こ・' + r.steps.map(function(s){ return esc(s.name); }).join(' → ') + '</div></div>' +
+  // まだ一度も承認されていないルーチンは、申請内容を見せる
+  const shown = r.approved ? r : Object.assign({}, r, r.request || {});
+  let badge = shown.active ? '' : ' <span class="badge gray">停止中</span>';
+  if (isRequesting_(r)) badge += ' <span class="badge pending">' + (r.approved ? '変更の承認待ち' : '承認待ち') + '</span>';
+  else if (r.rejectReason) badge += ' <span class="badge ng">却下</span>';
+  return '<div class="list-item"><div class="main"><div class="title">' + esc(shown.name) + badge + '</div>' +
+    '<div class="sub">' + who + '・' + stepsText_(shown.steps) + '</div>' +
+    (r.rejectReason ? '<div class="sub">理由：' + esc(r.rejectReason) + '（直してもう一度申請できます）</div>' : '') + '</div>' +
     '<div class="actions"><button class="btn tiny" onclick="editRoutine(\'' + r.id + '\')">編集</button></div></div>';
 }
+
+function stepsText_(steps){
+  return steps.length + 'こ・' + steps.map(function(s){ return esc(s.name) + ' ' + fmtDur(s.targetSec); }).join(' → ');
+}
+
+/** 親が見る「承認待ちのルーチン」1件分。変更なら今の内容もいっしょに見せる */
+function routineRequestItem_(r){
+  const q = r.request;
+  const who = (member_(r.createdBy) || { name: '?' }).name;
+  return '<div class="list-item"><div class="main"><div class="title">' + esc(who) + '：' + (r.approved ? '✏️ 変更' : '🆕 新しく作る') + '「' + esc(q.name) + '」' +
+    (q.active ? '' : ' <span class="badge gray">停止にする</span>') + '</div>' +
+    '<div class="sub">' + stepsText_(q.steps) + '</div>' +
+    (r.approved ? '<div class="sub">今：「' + esc(r.name) + '」' + stepsText_(r.steps) + '</div>' : '') +
+    '<div class="sub">' + esc(String(r.requestedAt).slice(5, 16)) + '</div></div>' +
+    '<div class="actions"><button class="btn tiny primary" onclick="decideRoutine(\'' + r.id + '\', true)">承認</button>' +
+    '<button class="btn tiny danger" onclick="decideRoutine(\'' + r.id + '\', false)">却下</button></div></div>';
+}
+
+async function decideRoutine(id, approve){
+  const pin = await needPin();
+  if (!pin) return;
+  const go = async function(reason){
+    try{
+      const res = await gs('decideRoutine', { token: S.token, actorId: S.me, pin: pin, routineId: id, approve: approve, reason: reason || '' });
+      toast(res.message, 'ok');
+      await refresh();
+    }catch(err){ pinFailed_(err); toastErr(err); }
+  };
+  if (approve) return go('');
+  openModal({
+    title: '却下する',
+    body: '<div class="form"><label>理由（子どもに見えます）<input type="text" id="rjReason" maxlength="100"></label></div>',
+    ok: '却下する',
+    onOk: function(){ return go(val('rjReason')); }
+  });
+}
+
 
 /** 設定タブの「声の設定」カード（この端末だけの設定） */
 function voiceCard_(){
@@ -1730,7 +1785,7 @@ function askPin_(memberId){
   return new Promise(function(resolve){
     openModal({
       title: '🔒 ' + m.name + 'のPIN',
-      body: '<div class="form"><label>数字4けた<input type="password" id="pinInput" inputmode="numeric" maxlength="4" autocomplete="off"></label></div>',
+      body: '<div class="form"><label>数字4けた<input type="password" id="pinInput" inputmode="numeric" maxlength="4" autocomplete="new-password"></label></div>',
       ok: 'OK',
       onOpen: function(){ setTimeout(function(){ document.getElementById('pinInput').focus(); }, 50); },
       onOk: async function(){
@@ -1749,30 +1804,48 @@ function pinFailed_(err){
   if (/PIN/.test(errText(err))){ S.parentPin = ''; S.pinFor = ''; }
 }
 
-/** 設定の保存（PIN付きでサーバーへ）→ 読み直し */
+/** 設定の保存（PIN付きでサーバーへ）→ 読み直し。
+ *  覚えていたPINが古い（あとでPINを変えた等）ときは、PINを聞き直してもう1回だけ送る */
 async function saveSetting_(fn, args){
+  const send = function(){ return gs(fn, Object.assign({ token: S.token, actorId: S.me, pin: S.parentPin }, args)); };
+  let res;
   try{
-    const res = await gs(fn, Object.assign({ token: S.token, actorId: S.me, pin: S.parentPin }, args));
-    toast(res.message, 'ok');
-    await refresh();
-  }catch(err){ pinFailed_(err); throw err; }
+    res = await send();
+  }catch(err){
+    if (!/PINが違います/.test(errText(err)) || !isParent_(S.me)) throw err;
+    pinFailed_(err);
+    show('modal', false);   // PINを聞く画面と同じ窓を使うので、いったん閉じる
+    try{
+      if (!(await needPin())) throw new Error('PINの確認をやめました');
+      res = await send();
+    }catch(err2){ pinFailed_(err2); toastErr(err2); throw err2; }
+  }
+  toast(res.message, 'ok');
+  await refresh();
 }
 
 function editRoutine(id){
-  const r = id ? S.routines.filter(function(x){ return x.id === id; })[0]
-               : { id: '', name: '', memberId: '', order: S.routines.length + 1, active: true, steps: [{ id: '', name: '', targetSec: 180 }] };
+  const base = id ? S.routines.filter(function(x){ return x.id === id; })[0]
+                  : { id: '', name: '', memberId: '', order: S.routines.length + 1, active: true, steps: [{ id: '', name: '', targetSec: 180 }] };
+  const parent = isParent_(S.me);
+  // 子どもは、申請中・却下された内容があればそこから直す（まだ反映されていないので）。
+  // 一度も承認されていないルーチンは本体が空なので、親も申請内容から始める
+  const r = (!parent || !base.approved) && base.request ? Object.assign({}, base, base.request) : base;
+  const note = parent
+    ? (isRequesting_(base) ? '<p class="muted">⚠️ 子どもの変更申請があります。ここで保存すると、申請は取り消されて この内容になります。</p>' : '')
+    : '<p class="muted">このルーチンは自分専用になります。保存すると親に申請され、承認されたら使えるようになります。</p>';
   openModal({
     title: id ? 'ルーチンを編集' : 'ルーチンを追加',
     body: '<div class="form">' +
       '<label>ルーチン名<input type="text" id="rtName" value="' + esc(r.name) + '" placeholder="例：朝の支度"></label>' +
       (isParent_(S.me) ? '<label>だれ用？<select id="rtMember"><option value="">みんな</option>' + S.members.filter(function(m){ return m.active; }).map(function(m){
         return '<option value="' + m.id + '"' + (m.id === r.memberId ? ' selected' : '') + '>' + esc(m.name) + '</option>';
-      }).join('') + '</select></label>' : '<p class="muted">このルーチンは自分専用になります。</p>') +
+      }).join('') + '</select></label>' : '') + note +
       '<label>表示順<input type="number" id="rtOrder" value="' + r.order + '"></label>' +
       '<label class="inline"><input type="checkbox" id="rtActive"' + (r.active ? ' checked' : '') + '> 使う（はずすと一覧に出ません）</label>' +
       '<h2 style="margin-top:6px">動作（上から順番）</h2><div id="stepRows"></div>' +
       '<button type="button" class="btn tiny" onclick="addStepRow()">＋ 動作を追加</button></div>',
-    ok: '保存',
+    ok: parent ? '保存' : '申請する',
     onOpen: function(){ r.steps.forEach(function(s){ addStepRow(s); }); },
     onOk: function(){
       const steps = Array.prototype.map.call(document.querySelectorAll('#stepRows .step-edit'), function(row){
@@ -1836,14 +1909,22 @@ function editMember(id){
       '<label>名前<input type="text" id="mbName" value="' + esc(m.name) + '"></label>' +
       '<label>役割<select id="mbRole"><option value="子"' + (m.role !== '親' ? ' selected' : '') + '>子</option>' +
         '<option value="親"' + (m.role === '親' ? ' selected' : '') + '>親（承認・設定ができる）</option></select></label>' +
-      '<label>PIN（親のみ・数字4けた）<input type="password" id="mbPin" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="' +
+      '<label id="mbPinLabel">PIN（数字4けた）<input type="password" id="mbPin" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="' +
         (m.hasPin ? '変えるときだけ入力' : '') + '"></label>' +
       '<label>表示順<input type="number" id="mbOrder" value="' + m.order + '"></label>' +
       '<label class="inline"><input type="checkbox" id="mbActive"' + (m.active ? ' checked' : '') + '> 使う</label></div>',
     ok: '保存',
-    onOk: function(){
-      return saveSetting_('saveMember', { memberId: m.id, name: val('mbName'), role: val('mbRole'), newPin: val('mbPin'),
+    onOpen: function(){
+      // PINは親だけ。子をえらんでいるときは欄ごと隠す
+      const upd = function(){ show('mbPinLabel', val('mbRole') === '親'); };
+      document.getElementById('mbRole').onchange = upd;
+      upd();
+    },
+    onOk: async function(){
+      const newPin = val('mbRole') === '親' ? val('mbPin') : '';
+      await saveSetting_('saveMember', { memberId: m.id, name: val('mbName'), role: val('mbRole'), newPin: newPin,
         order: Number(val('mbOrder')), active: document.getElementById('mbActive').checked });
+      if (newPin && m.id === S.me){ S.parentPin = newPin; S.pinFor = S.me; }   // 自分のPINを変えたら覚え直す
     }
   });
 }
