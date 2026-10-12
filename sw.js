@@ -1,5 +1,5 @@
 /* Routine Bank Service Worker（build-pwa.js が自動生成。直接編集しない） */
-const CACHE = 'routine-bank-e0b8f3ceac';
+const CACHE = 'routine-bank-968ae32b9e';
 const SHELL = ['./', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {

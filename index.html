@@ -782,7 +782,6 @@ let wakeLock = null;
 function startRun(routineId){
   const r = S.routines.filter(function(x){ return x.id === routineId; })[0];
   if (!r) return;
-  unlockSpeech_();
   R = {
     runId: uuid_(), memberId: S.me, memberName: member_(S.me).name,
     routineId: r.id, routineName: r.name, date: localDate_(),
@@ -1183,25 +1182,52 @@ function jaVoices_(){
   }catch(e){ return []; }
 }
 
-function speak(text){
+/**
+ * 読み上げ。onStatus を渡すと、うまくいったか・何で失敗したかを文字で教えてくれる（設定の「試しに聞く」用）。
+ * AndroidのChromeは cancel() の直後に speak() すると声が消えることがあるので、止めたあと少し待ってから読む。
+ */
+let speakSeq = 0;
+function speak(text, onStatus){
+  const report = onStatus || function(){};
   try{
-    if (!('speechSynthesis' in window)) return;
+    if (!('speechSynthesis' in window)){ report('⚠️ このブラウザは読み上げに対応していません'); return; }
     const pref = voicePref_();
-    if (!pref.on) return;
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'ja-JP';
-    const v = jaVoices_().filter(function(x){ return x.voiceURI === pref.voice; })[0];
-    if (v) u.voice = v;
-    u.rate = pref.rate;
-    u.pitch = pref.pitch;
-    u.volume = pref.volume;
-    speechSynthesis.speak(u);
-  }catch(e){}
+    if (!pref.on){ report('「声で案内する」がオフになっています'); return; }
+    const seq = ++speakSeq;   // 新しい読み上げが来たら、古いものは読まない
+    const go = function(){
+      if (seq !== speakSeq) return;
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'ja-JP';
+      const v = jaVoices_().filter(function(x){ return x.voiceURI === pref.voice; })[0];
+      if (v) u.voice = v;
+      u.rate = pref.rate;
+      u.pitch = pref.pitch;
+      u.volume = pref.volume;
+      let started = false;
+      u.onstart = function(){ started = true; report('▶ 読み上げ中…（声：' + (v ? v.name : 'おまかせ') + '）'); };
+      u.onend = function(){ if (started) report('✅ 読み上げました。聞こえなかったら「メディアの音量」を上げてください'); };
+      u.onerror = function(e){
+        if (seq === speakSeq && e.error !== 'interrupted' && e.error !== 'canceled') report('⚠️ 読み上げエラー：' + e.error);
+      };
+      speechSynthesis.resume();   // Chromeは一時停止のまま固まることがある
+      speechSynthesis.speak(u);
+      setTimeout(function(){
+        if (!started && seq === speakSeq) report('⚠️ 読み上げが始まりません。Androidなら「Google 音声サービス」の日本語の声が入っているか確認してください');
+      }, 3000);
+    };
+    if (speechSynthesis.speaking || speechSynthesis.pending){
+      speechSynthesis.cancel();
+      setTimeout(go, 150);
+    }else{
+      go();
+    }
+  }catch(e){ report('⚠️ ' + e.message); }
 }
-/** iPhoneは「ボタンを押したとき」に一度しゃべらせないと、その後の声が出ないことがある */
-function unlockSpeech_(){
-  try{ if ('speechSynthesis' in window) speechSynthesis.speak(new SpeechSynthesisUtterance('')); }catch(e){}
+
+function testVoice(){
+  const el = document.getElementById('voiceStatus');
+  el.textContent = '準備中…';
+  speak('次は、歯みがき。目標3分', function(msg){ el.textContent = msg; });
 }
 function speakDur_(sec){
   sec = Math.abs(Math.round(sec));
@@ -1501,7 +1527,10 @@ function voiceCard_(){
     slider('rate', '速さ', 0.6, 1.6, 0.05, pref.rate) +
     slider('pitch', '声の高さ', 0.5, 1.8, 0.05, pref.pitch) +
     slider('volume', '音量', 0.1, 1, 0.05, pref.volume) +
-    '</div><button class="btn primary" onclick="speak(\'次は、歯みがき。目標3分\')">🔊 試しに聞く</button></div>';
+    '</div><button class="btn primary" onclick="testVoice()">🔊 試しに聞く</button>' +
+    '<p class="muted" id="voiceStatus" style="margin:8px 0 0"></p>' +
+    '<p class="muted" style="margin:4px 0 0">この端末の日本語の声：' + voices.length + '種類' +
+      (voices.length ? '' : '（見つかりません）') + '</p></div>';
 }
 
 function setVoicePref(key, value){
