@@ -916,7 +916,8 @@ const HEAD_ERRORLOG = ['日時', '家庭ID', '関数名', 'エラー内容', '�
 //                     ②その行の【返信】列にスプレッドシートで直接書く
 // 【送信者】はあとから足した列。空の行は利用者のメッセージとして扱う
 // 【取り消し】＝利用者が送信を取り消した日時。行は消さずに残し、画面には中身を出さない
-const HEAD_FEEDBACK = ['メッセージID', '日時', 'スレッドID', 'アプリ', '家庭名', '名前', '内容', '返信', '状態', '送信者', '取り消し'];
+// 【管理者削除】＝開発者が管理者パネルから消した日時。パネルに出なくなるだけで、利用者のチャットには残る
+const HEAD_FEEDBACK = ['メッセージID', '日時', 'スレッドID', 'アプリ', '家庭名', '名前', '内容', '返信', '状態', '送信者', '取り消し', '管理者削除'];
 const FB_FROM_DEV = '開発者';
 // 開発者キーのSHA-256（キーそのものは書かない。Home版ではこのファイルが公開されるため）
 const ADMIN_KEY_HASH = '4ad58dc7dfe88d627960e686cf6a9b8d9799832e336138248ccd9e87e68b7946';
@@ -928,7 +929,7 @@ const ALL_SHEETS = [
   [SHEET_FEEDBACK, HEAD_FEEDBACK]
 ];
 // 見出しを変えたらこの番号を上げる → 次の呼び出しで自動的にシートが整う
-const SCHEMA_VERSION = '6';
+const SCHEMA_VERSION = '7';
 
 // ── 状態 ────────────────────────────────
 const ROLE_PARENT = '親';
@@ -972,7 +973,8 @@ const API_FUNCTIONS = {
   verifyParentPin: verifyParentPin, saveMember: saveMember, saveRoutine: saveRoutine, decideRoutine: decideRoutine,
   saveReward: saveReward, changeFamilyPassword: changeFamilyPassword,
   sendFeedback: sendFeedback, getFeedbackThread: getFeedbackThread, unsendFeedback: unsendFeedback,
-  adminListThreads: adminListThreads, adminGetThread: adminGetThread, adminReply: adminReply
+  adminListThreads: adminListThreads, adminGetThread: adminGetThread, adminReply: adminReply,
+  adminDeleteThread: adminDeleteThread
 };
 
 function doPost(e) {
@@ -1863,11 +1865,14 @@ function checkThreadId_(threadId) {
   return id;
 }
 
-/** スレッドのメッセージを古い順に。返信が書いてある行は、その直後に開発者のメッセージとして並べる */
-function feedbackThread_(threadId) {
+function adminDeleted_(r) { return !!String(r['管理者削除'] || '').trim(); }
+
+/** スレッドのメッセージを古い順に。返信が書いてある行は、その直後に開発者のメッセージとして並べる。
+ *  forAdmin のときは、管理者パネルで削除した分を除く */
+function feedbackThread_(threadId, forAdmin) {
   const out = [];
   readSheet_(SHEET_FEEDBACK)
-    .filter(function (r) { return r['スレッドID'] === threadId; })
+    .filter(function (r) { return r['スレッドID'] === threadId && !(forAdmin && adminDeleted_(r)); })
     .forEach(function (r) {
       const unsent = !!String(r['取り消し'] || '').trim();
       out.push({ id: r['メッセージID'], at: r['日時'], from: r['送信者'] === FB_FROM_DEV ? 'dev' : 'me',
@@ -1940,7 +1945,7 @@ function adminListThreads(args) {
     const order = [];
     readSheet_(SHEET_FEEDBACK).forEach(function (r) {
       const id = r['スレッドID'];
-      if (!id) return;
+      if (!id || adminDeleted_(r)) return;   // 削除したやりとりは出さない（そのあと届いた分だけ出る）
       let t = byId[id];
       if (!t) { t = byId[id] = { threadId: id, app: '', familyName: '', name: '', count: 0 }; order.push(t); }
       const fromDev = r['送信者'] === FB_FROM_DEV || String(r['返信'] || '').trim() !== '';
@@ -1963,7 +1968,24 @@ function adminListThreads(args) {
 function adminGetThread(args) {
   return guarded_('adminGetThread', function () {
     requireAdmin_(args && args.adminKey);
-    return { messages: feedbackThread_(checkThreadId_(args.threadId)) };
+    return { messages: feedbackThread_(checkThreadId_(args.threadId), true) };
+  });
+}
+
+/** 返信済みのやりとりを管理者パネルから消す（行は残す）。args = {adminKey, threadId} */
+function adminDeleteThread(args) {
+  return guarded_('adminDeleteThread', function () {
+    requireAdmin_(args && args.adminKey);
+    const threadId = checkThreadId_(args.threadId);
+    return withLock_(function () {
+      const rows = readSheet_(SHEET_FEEDBACK).filter(function (r) { return r['スレッドID'] === threadId && !adminDeleted_(r); });
+      if (!rows.length) throw new Error('このやりとりが見つかりません');
+      const msgs = feedbackThread_(threadId, true).filter(function (m) { return !m.unsent; });
+      if (msgs.length && msgs[msgs.length - 1].from !== 'dev') throw new Error('未返信のやりとりは削除できません。返信してから削除してください');
+      const now = nowStr_();
+      rows.forEach(function (r) { updateRow_(SHEET_FEEDBACK, HEAD_FEEDBACK, r._row, { '管理者削除': now }); });
+      return { ok: true };
+    });
   });
 }
 
@@ -1987,7 +2009,7 @@ function adminReply(args) {
       rows.forEach(function (r) {
         if (r['状態'] === '未対応') updateRow_(SHEET_FEEDBACK, HEAD_FEEDBACK, r._row, { '状態': '返信済' });
       });
-      return { messages: feedbackThread_(threadId) };
+      return { messages: feedbackThread_(threadId, true) };
     });
   });
 }
@@ -3745,8 +3767,24 @@ function devRenderThread_(messages){
     return '<div class="bubble ' + (mine ? 'me' : 'dev') + '">' + (mine ? '' : '<div class="who">' + esc(t.name || '相手') + '</div>') +
       esc(m.text) + (mine ? '' : '<div><button class="btn tiny copy" onclick="devCopy(' + i + ')">📋 コピー</button></div>') +
       (m.at ? '<div class="at">' + esc(m.at.slice(5, 16)) + '</div>' : '') + '</div>';
-  }).join('');
+  }).join('') + (devCanDelete_(messages)
+    ? '<p class="chat-note"><button class="btn tiny danger" onclick="devDeleteThread()">🗑 このやりとりを削除</button></p>' : '');
   body.scrollTop = body.scrollHeight;
+}
+
+/** 返信済み（取り消し以外で最後が開発者の返信）なら削除できる。サーバーの判定と同じ */
+function devCanDelete_(messages){
+  const rest = messages.filter(function(m){ return !m.unsent; });
+  return !rest.length || rest[rest.length - 1].from === 'dev';
+}
+
+function devDeleteThread(){
+  const t = devThreads.filter(function(x){ return x.threadId === devThreadId; })[0] || {};
+  confirmModal('このやりとりを削除する？', '管理者パネルから消えます（' + (t.name || '相手') + 'のアプリのチャットには残ります）。あとで相手が送ってきたら、新しいメッセージだけがまた出ます。', '削除', async function(){
+    await devCall_('adminDeleteThread', { threadId: devThreadId });
+    toast('削除しました', 'ok');
+    devList_();
+  });
 }
 
 /** 相手のメッセージをクリップボードへ。古いブラウザ用に、選択してコピーする方法も用意 */

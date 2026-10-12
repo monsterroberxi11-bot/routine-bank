@@ -2376,8 +2376,24 @@ function devRenderThread_(messages){
     return '<div class="bubble ' + (mine ? 'me' : 'dev') + '">' + (mine ? '' : '<div class="who">' + esc(t.name || '相手') + '</div>') +
       esc(m.text) + (mine ? '' : '<div><button class="btn tiny copy" onclick="devCopy(' + i + ')">📋 コピー</button></div>') +
       (m.at ? '<div class="at">' + esc(m.at.slice(5, 16)) + '</div>' : '') + '</div>';
-  }).join('');
+  }).join('') + (devCanDelete_(messages)
+    ? '<p class="chat-note"><button class="btn tiny danger" onclick="devDeleteThread()">🗑 このやりとりを削除</button></p>' : '');
   body.scrollTop = body.scrollHeight;
+}
+
+/** 返信済み（取り消し以外で最後が開発者の返信）なら削除できる。サーバーの判定と同じ */
+function devCanDelete_(messages){
+  const rest = messages.filter(function(m){ return !m.unsent; });
+  return !rest.length || rest[rest.length - 1].from === 'dev';
+}
+
+function devDeleteThread(){
+  const t = devThreads.filter(function(x){ return x.threadId === devThreadId; })[0] || {};
+  confirmModal('このやりとりを削除する？', '管理者パネルから消えます（' + (t.name || '相手') + 'のアプリのチャットには残ります）。あとで相手が送ってきたら、新しいメッセージだけがまた出ます。', '削除', async function(){
+    await devCall_('adminDeleteThread', { threadId: devThreadId });
+    toast('削除しました', 'ok');
+    devList_();
+  });
 }
 
 /** 相手のメッセージをクリップボードへ。古いブラウザ用に、選択してコピーする方法も用意 */
