@@ -381,6 +381,26 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
 .toast.err{background:var(--danger);}
 .toast.ok{background:var(--ok);}
 
+/* ── チュートリアル（はじめて開いた人に、本物の画面を光らせて説明）── */
+.tour{position:fixed; inset:0; z-index:58;}
+.tour-hole{
+  position:fixed; border-radius:12px; pointer-events:none;
+  box-shadow:0 0 0 3px var(--primary), 0 0 0 9999px rgba(0,0,0,.6);
+  transition:all .25s ease;
+}
+.tour-hole.none{left:50% !important; top:50% !important; width:0 !important; height:0 !important; box-shadow:0 0 0 9999px rgba(0,0,0,.6);}
+.tour-card{
+  position:fixed; left:50%; transform:translateX(-50%); width:calc(100% - 32px); max-width:380px;
+  background:#fff; color:var(--text); border-radius:16px; padding:16px; box-shadow:0 8px 30px rgba(0,0,0,.3);
+  transition:top .25s ease;
+}
+.tour-card h3{margin:0 0 6px; font-size:16.5px;}
+.tour-card p{margin:0; font-size:14px; line-height:1.65;}
+.tour-foot{display:flex; align-items:center; gap:8px; margin-top:14px;}
+.tour-dots{flex:1; display:flex; gap:5px;}
+.tour-dots span{width:7px; height:7px; border-radius:50%; background:var(--line);}
+.tour-dots span.on{background:var(--primary);}
+
 /* ============================================================
    PC（画面が広いとき）
    ============================================================ */
@@ -575,6 +595,21 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
 </div>
 
 <!-- ── ダイアログ ───────────────── -->
+<!-- ── チュートリアル（はじめて開いた人向け）───────────────── -->
+<div id="tour" class="tour hidden">
+  <div class="tour-hole" id="tourHole"></div>
+  <div class="tour-card" id="tourCard">
+    <h3 id="tourTitle"></h3>
+    <p id="tourText"></p>
+    <div class="tour-foot">
+      <div class="tour-dots" id="tourDots"></div>
+      <button class="btn tiny" id="tourSkip" onclick="endTour()">スキップ</button>
+      <button class="btn tiny" id="tourBack" onclick="tourGo(-1)">もどる</button>
+      <button class="btn tiny primary" id="tourNext" onclick="tourGo(1)">次へ</button>
+    </div>
+  </div>
+</div>
+
 <div id="modal" class="modal hidden">
   <div class="modal-box">
     <h2 id="modalTitle"></h2>
@@ -2166,6 +2201,7 @@ function enterApp(){
   flushOutbox();
   checkChatUnread_();
   if (load_('rt_run', null)) resumeRun();
+  else if (!load_(tourKey_(), false)) setTimeout(startTour, 400);   // PINの窓が閉じきってから
 }
 
 async function logout(){
@@ -3019,6 +3055,7 @@ function renderSettings(){
   let html = '<div class="card"><h2>この端末</h2><p>家庭：<b>' + esc(S.familyName) + '</b>　使う人：<b>' + esc(me.name) + '</b></p>' +
     '<div class="btn-row"><button class="btn" onclick="openWho()">使う人を変える</button>' +
     (IS_LOCAL ? '' : '<button class="btn danger" onclick="logout()">ログアウト</button>') + '</div></div>' +
+    '<div class="card"><h2>使い方</h2><button class="btn" onclick="startTour()">📖 使い方をもう一度見る</button></div>' +
     voiceCard_() + (IS_LOCAL ? backupCard_() : '');
 
   if (isParent){
@@ -3373,6 +3410,120 @@ function changePassword(){
       toast(res.message, 'ok');
     }
   });
+}
+
+
+/* ============================================================
+   7.4 チュートリアル（はじめて開いた人に、本物の画面を光らせて説明）
+   人ごと・端末ごとに1回だけ自動で出る。設定の「使い方をもう一度見る」でいつでも見られる。
+   ============================================================ */
+
+let tourSteps = [];
+let tourIdx = 0;
+let tourTarget = null;   // 今光らせている要素
+
+function tourKey_(){ return 'rt_tour_' + S.familyName + '_' + S.me; }
+
+/** 光らせる場所。タブはスマホ（下）とPC（上）で場所がちがうので、見えている方を使う */
+function tourTab_(key){
+  return function(){
+    const i = VIEWS.map(function(v){ return v.key; }).indexOf(key);
+    return ['bottomnav', 'tabs'].map(function(id){ return document.getElementById(id).children[i]; })
+      .filter(function(el){ return el && el.getBoundingClientRect().width; })[0];
+  };
+}
+function tourEl_(sel){ return function(){ return document.querySelector(sel); }; }
+
+function tourStepsFor_(parent){
+  return [
+    { title: '⏱ Routine Bank へようこそ！',
+      text: 'ルーチン（朝のしたく など）を目標より早く終わらせると、余った時間が「時間貯金」になるアプリです。かんたんに使い方を紹介します。' },
+    { view: 'timer', el: tourEl_('#routineList .routine, #routineList .btn'), title: '▶ ルーチンを始める',
+      text: 'ルーチンを押すとタイマーが始まります。動作が終わるたびに「できた！次へ」を押してね。目標より早ければ貯金、オーバーしたら貯金から引かれます。' },
+    { view: 'timer', el: tourEl_('#bankMini'), title: '💰 今の時間貯金',
+      text: '貯まっている時間です。右に今週・今月のふえた分・へった分が出ます。' },
+    { view: 'timer', el: tourEl_('#showRemaining'), parentEl: true, title: '🙈 残り時間をかくす',
+      text: 'オフにすると残り時間が見えない「体内時計モード」。どっちが早くできるかは「分析」でくらべられます。' },
+    { view: 'timer', title: '↕ 実行中にできること',
+      text: '実行画面では「一時停止」「とばす」のほかに、「今日の順番」で今日だけ動作の順番を変えられます。「最初から」でやり直すには親のPINが必要です。' },
+    { el: tourTab_('bank'), title: '🎮 貯金を交換する',
+      text: parent ? '子どもの交換申請（ゲーム時間など）はここに届きます。承認すると貯金から引かれます。'
+                   : '貯めた時間は、ゲーム時間などと交換できます。交換するには親の承認が必要です。' },
+    { el: tourTab_('analysis'), title: '📊 分析',
+      text: 'オーバーした理由や、残り時間あり／なしでどっちが早いかが見られます。' },
+    { el: tourTab_('settings'), title: '⚙️ 設定',
+      text: parent ? 'ルーチン・交換先・メンバーの変更はここ（PINで開きます）。子どもが作ったルーチンの承認もここでします。'
+                   : '自分でルーチンを作れます。親が承認したら使えるようになります。声の設定もここです。' },
+    { el: tourEl_('#chatBtn'), title: '💬 要望',
+      text: '「こうしてほしい」「ここが動かない」などは、ここから開発者に送れます。返事もここに届きます。' },
+    { el: tourEl_('#meChip'), title: '👤 使う人',
+      text: '家族で1台を使うときは、ここで使う人を切りかえます。' },
+    { title: '🎉 準備OK！',
+      text: 'さっそくルーチンを始めてみよう。この説明は「設定」の「使い方をもう一度見る」からいつでも見られます。' }
+  ];
+}
+
+function startTour(){
+  if (!document.getElementById('runScreen').classList.contains('hidden')) return;   // ルーチン実行中は出さない
+  tourSteps = tourStepsFor_(isParent_(S.me));
+  tourIdx = 0;
+  show('tour', true);
+  window.addEventListener('resize', placeTour_);
+  renderTour_();
+}
+
+function tourGo(d){
+  tourIdx += d;
+  if (tourIdx >= tourSteps.length) return endTour();
+  renderTour_();
+}
+
+function endTour(){
+  save_(tourKey_(), true);
+  show('tour', false);
+  window.removeEventListener('resize', placeTour_);
+  if (S.view !== 'timer') switchView('timer');
+}
+
+function renderTour_(){
+  const st = tourSteps[tourIdx];
+  if (st.view && S.view !== st.view) switchView(st.view);
+  document.getElementById('tourTitle').textContent = st.title;
+  document.getElementById('tourText').textContent = st.text;
+  document.getElementById('tourDots').innerHTML = tourSteps.map(function(x, i){ return '<span' + (i === tourIdx ? ' class="on"' : '') + '></span>'; }).join('');
+  show('tourBack', tourIdx > 0);
+  show('tourSkip', tourIdx < tourSteps.length - 1);
+  document.getElementById('tourNext').textContent = tourIdx === tourSteps.length - 1 ? 'はじめる' : '次へ';
+  let el = st.el && st.el();
+  if (el && st.parentEl) el = el.parentNode;
+  if (el && el.getBoundingClientRect().width){
+    const r0 = el.getBoundingClientRect();
+    if (r0.top < 60 || r0.bottom > window.innerHeight - 90) el.scrollIntoView({ block: 'center' });
+  }
+  tourTarget = el;
+  placeTour_();
+}
+
+/** 光らせる穴と説明カードの位置を合わせる。カードは穴とかぶらない側（上か下）に出す */
+function placeTour_(){
+  const hole = document.getElementById('tourHole');
+  const card = document.getElementById('tourCard');
+  const el = tourTarget;
+  const r = el && el.getBoundingClientRect();
+  if (!r || !r.width){
+    hole.className = 'tour-hole none';
+    card.style.top = Math.max(16, (window.innerHeight - card.offsetHeight) / 2) + 'px';
+    return;
+  }
+  const pad = 6;
+  hole.className = 'tour-hole';
+  hole.style.left = (r.left - pad) + 'px';
+  hole.style.top = (r.top - pad) + 'px';
+  hole.style.width = (r.width + pad * 2) + 'px';
+  hole.style.height = (r.height + pad * 2) + 'px';
+  const below = r.bottom + pad + 12;
+  card.style.top = (below + card.offsetHeight <= window.innerHeight - 8
+    ? below : Math.max(8, r.top - pad - 12 - card.offsetHeight)) + 'px';
 }
 
 
