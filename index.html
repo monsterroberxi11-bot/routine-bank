@@ -282,6 +282,7 @@ table.grid th{font-size:11.5px; color:var(--muted);}
 
 /* ── フォーム・ボタン ───────────────── */
 input,select,textarea,button{font-family:inherit; font-size:16px;}
+input[type=range],input[type=checkbox]{accent-color:var(--primary);}
 input[type=text],input[type=password],input[type=number],select,textarea{
   width:100%; padding:10px 12px; margin-top:4px;
   border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--text); min-height:var(--tap);
@@ -1171,13 +1172,30 @@ document.addEventListener('visibilitychange', function(){
   if (document.visibilityState === 'visible' && R){ wakeLock = null; requestWakeLock_(); renderRun_(); }
 });
 
+/* 声の設定（端末ごと・rt_voice）。voice は声の名前（voiceURI）、空ならスマホのおまかせ */
+const VOICE_DEFAULT = { on: true, voice: '', rate: 1.05, pitch: 1, volume: 1 };
+function voicePref_(){ return Object.assign({}, VOICE_DEFAULT, load_('rt_voice', {})); }
+
+/** スマホに入っている日本語の声（読み込みが遅れる機種があるので毎回取り直す） */
+function jaVoices_(){
+  try{
+    return speechSynthesis.getVoices().filter(function(v){ return /^ja/i.test(v.lang); });
+  }catch(e){ return []; }
+}
+
 function speak(text){
   try{
     if (!('speechSynthesis' in window)) return;
+    const pref = voicePref_();
+    if (!pref.on) return;
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'ja-JP';
-    u.rate = 1.05;
+    const v = jaVoices_().filter(function(x){ return x.voiceURI === pref.voice; })[0];
+    if (v) u.voice = v;
+    u.rate = pref.rate;
+    u.pitch = pref.pitch;
+    u.volume = pref.volume;
     speechSynthesis.speak(u);
   }catch(e){}
 }
@@ -1418,7 +1436,8 @@ function renderSettings(){
   const unlocked = isParent && S.parentPin && S.pinFor === S.me;
   let html = '<div class="card"><h2>この端末</h2><p>家庭：<b>' + esc(S.familyName) + '</b>　使う人：<b>' + esc(me.name) + '</b></p>' +
     '<div class="btn-row"><button class="btn" onclick="openWho()">使う人を変える</button>' +
-    '<button class="btn danger" onclick="logout()">ログアウト</button></div></div>';
+    '<button class="btn danger" onclick="logout()">ログアウト</button></div></div>' +
+    voiceCard_();
 
   if (!unlocked){
     const mine = S.routines.filter(function(r){ return r.createdBy === S.me; });
@@ -1459,6 +1478,46 @@ function routineItem_(r){
     '<div class="sub">' + who + '・' + r.steps.length + 'こ・' + r.steps.map(function(s){ return esc(s.name); }).join(' → ') + '</div></div>' +
     '<div class="actions"><button class="btn tiny" onclick="editRoutine(\'' + r.id + '\')">編集</button></div></div>';
 }
+
+/** 設定タブの「声の設定」カード（この端末だけの設定） */
+function voiceCard_(){
+  if (!('speechSynthesis' in window)) {
+    return '<div class="card"><h2>声の設定</h2><p class="muted">このブラウザは読み上げに対応していません。</p></div>';
+  }
+  const pref = voicePref_();
+  const voices = jaVoices_();
+  const slider = function(id, label, min, max, step, value){
+    return '<label>' + label + ' <span class="muted" id="' + id + 'Val">' + value + '</span>' +
+      '<input type="range" id="' + id + '" min="' + min + '" max="' + max + '" step="' + step + '" value="' + value + '"' +
+      ' oninput="setVoicePref(\'' + id + '\', this.value)" style="width:100%"></label>';
+  };
+  return '<div class="card"><h2>声の設定</h2><div class="form">' +
+    '<label class="inline"><input type="checkbox"' + (pref.on ? ' checked' : '') + ' onchange="setVoicePref(\'on\', this.checked)"> 声で案内する</label>' +
+    '<label>声の種類<select onchange="setVoicePref(\'voice\', this.value)"><option value="">おまかせ</option>' +
+      voices.map(function(v){
+        return '<option value="' + esc(v.voiceURI) + '"' + (v.voiceURI === pref.voice ? ' selected' : '') + '>' + esc(v.name) + '</option>';
+      }).join('') + '</select></label>' +
+    (voices.length ? '' : '<p class="muted">声の一覧を読み込み中です。出てこないときは少し待ってから設定タブを開き直してください。</p>') +
+    slider('rate', '速さ', 0.6, 1.6, 0.05, pref.rate) +
+    slider('pitch', '声の高さ', 0.5, 1.8, 0.05, pref.pitch) +
+    slider('volume', '音量', 0.1, 1, 0.05, pref.volume) +
+    '</div><button class="btn primary" onclick="speak(\'次は、歯みがき。目標3分\')">🔊 試しに聞く</button></div>';
+}
+
+function setVoicePref(key, value){
+  const pref = voicePref_();
+  pref[key] = (key === 'on') ? !!value : (key === 'voice' ? value : Number(value));
+  save_('rt_voice', pref);
+  const label = document.getElementById(key + 'Val');
+  if (label) label.textContent = value;
+}
+
+// 声の一覧はあとから届く機種がある。届いたら設定タブを描き直す
+try{
+  if ('speechSynthesis' in window) speechSynthesis.addEventListener('voiceschanged', function(){
+    if (S.view === 'settings' && !document.getElementById('main').classList.contains('hidden')) renderSettings();
+  });
+}catch(e){}
 
 async function unlockSettings(){
   if (await needPin()) renderSettings();
