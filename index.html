@@ -98,6 +98,12 @@ h2{font-size:15px; margin:0 0 10px; font-weight:700;}
   background:var(--card); border-bottom:1px solid var(--line);
 }
 .brand{font-weight:800; color:var(--primary-dark);}
+.top-right{display:flex; align-items:center; gap:8px;}
+.chat-btn{
+  position:relative; border:1px solid var(--line); background:#fff; border-radius:999px;
+  width:38px; height:34px; font-size:16px; cursor:pointer; line-height:1;
+}
+.chat-btn .dot{top:-5px; left:auto; right:-6px;}
 .me-chip{
   border:1px solid var(--line); background:#fff; border-radius:999px;
   padding:6px 12px; font-weight:700; cursor:pointer; font-size:13px;
@@ -310,6 +316,34 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
 .step-edit .u{font-size:12px; color:var(--muted);}
 .step-edit .btn{padding:6px 8px; min-height:38px;}
 
+/* ── 要望チャット ───────────────── */
+.chat{
+  position:fixed; inset:0; z-index:45; background:var(--bg); display:flex; flex-direction:column;
+  padding-top:env(safe-area-inset-top);
+}
+.chat-top{
+  display:flex; align-items:center; gap:8px; padding:10px 12px;
+  background:var(--card); border-bottom:1px solid var(--line);
+}
+.chat-title{flex:1; text-align:center; font-weight:800;}
+.chat-spacer{width:72px;}
+.chat-body{flex:1; overflow-y:auto; padding:14px 12px; display:flex; flex-direction:column; gap:10px;}
+.bubble{
+  max-width:80%; padding:10px 13px; border-radius:16px; font-size:14.5px; line-height:1.55;
+  white-space:pre-wrap; word-break:break-word;
+}
+.bubble.dev{align-self:flex-start; background:#fff; border:1px solid var(--line); border-top-left-radius:4px;}
+.bubble.me{align-self:flex-end; background:var(--primary); color:#fff; border-top-right-radius:4px;}
+.bubble .who{font-size:11px; font-weight:800; color:var(--primary-dark); margin-bottom:2px;}
+.bubble .at{font-size:10.5px; opacity:.7; margin-top:4px; text-align:right;}
+.chat-note{align-self:center; font-size:12px; color:var(--muted); text-align:center;}
+.chat-input{
+  display:flex; gap:8px; align-items:flex-end; padding:10px 12px;
+  padding-bottom:calc(10px + env(safe-area-inset-bottom));
+  background:var(--card); border-top:1px solid var(--line);
+}
+.chat-input textarea{flex:1; margin:0; resize:none; min-height:44px; max-height:120px;}
+
 /* ── ダイアログ・トースト ───────────────── */
 .modal{
   position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:60;
@@ -410,7 +444,10 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
 <!-- ── 上のバー・タブ ───────────────── -->
 <header class="topbar hidden" id="topbar">
   <div class="brand">⏱ Routine Bank</div>
-  <button class="me-chip" id="meChip" onclick="openWho()"></button>
+  <div class="top-right">
+    <button class="chat-btn" id="chatBtn" onclick="openChat()" aria-label="要望・お問い合わせ">💬<span class="dot hidden" id="chatDot">!</span></button>
+    <button class="me-chip" id="meChip" onclick="openWho()"></button>
+  </div>
 </header>
 <nav class="tabs hidden" id="tabs"></nav>
 
@@ -488,6 +525,20 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
   <div class="run-body hidden" id="runDone"></div>
 </div>
 
+<!-- ── 要望チャット（全画面）───────────────── -->
+<div id="chatScreen" class="chat hidden">
+  <div class="chat-top">
+    <button class="btn tiny" onclick="closeChat()">← もどる</button>
+    <div class="chat-title">要望・お問い合わせ</div>
+    <span class="chat-spacer"></span>
+  </div>
+  <div class="chat-body" id="chatBody"></div>
+  <form class="chat-input" onsubmit="sendChat(); return false;">
+    <textarea id="chatText" rows="2" maxlength="1000" placeholder="こうしてほしい、ここが動かない…など"></textarea>
+    <button class="btn primary" id="chatSend" type="submit">送信</button>
+  </form>
+</div>
+
 <!-- ── ダイアログ ───────────────── -->
 <div id="modal" class="modal hidden">
   <div class="modal-box">
@@ -546,10 +597,10 @@ function gsLocal_(fnName, args){
 
 /* PWA版：GASの doPost に fetch で送る。
    Content-Type を text/plain にするのは、ブラウザの事前確認（CORSプリフライト）を起こさないため */
-async function gsFetch_(fnName, args){
+async function gsFetch_(fnName, args, url){
   let res;
   try{
-    res = await fetch(API_URL, {
+    res = await fetch(url || API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ fn: fnName, args: args })
@@ -728,6 +779,7 @@ function enterApp(){
   renderNav();
   switchView(S.view);
   flushOutbox();
+  checkChatUnread_();
   if (load_('rt_run', null)) resumeRun();
 }
 
@@ -1778,6 +1830,100 @@ function changePassword(){
       toast(res.message, 'ok');
     }
   });
+}
+
+
+/* ============================================================
+   7.5 要望チャット（開発者に要望・不具合を送る。返事もここに届く）
+   スレッドID＝この端末で作ったランダムな番号。ログインなしで使える。
+   Home版はふだんネットを使わないが、チャットだけはGASに送る（FEEDBACK_URL）
+   ============================================================ */
+
+const FEEDBACK_URL = '';   // Home版のときだけ build-pwa.js がGASのURLを入れる
+const CHAT_WELCOME = 'こんにちは！Routine Bank を作っている開発者です。\n「こうしてほしい」「ここが動かない」など、なんでも送ってね。返事はこの画面に届きます。';
+let chatMessages = [];
+
+function chatThreadId_(){
+  let id = load_('rt_chat_thread', '');
+  if (!id){ id = uuid_(); save_('rt_chat_thread', id); }
+  return id;
+}
+
+function feedbackCall_(fnName, args){
+  if (!IS_LOCAL) return gs(fnName, args);
+  if (!FEEDBACK_URL) return Promise.reject(new Error('この版ではチャットを使えません'));
+  return gsFetch_(fnName, [args], FEEDBACK_URL);
+}
+
+async function openChat(){
+  show('chatScreen', true);
+  renderChat_('読み込み中…');
+  try{
+    const r = await feedbackCall_('getFeedbackThread', { threadId: chatThreadId_() });
+    chatMessages = r.messages;
+    renderChat_('');
+    markChatSeen_();
+  }catch(err){
+    renderChat_('⚠️ ' + errText(err));
+  }
+}
+
+function closeChat(){ show('chatScreen', false); }
+
+async function sendChat(){
+  const box = document.getElementById('chatText');
+  const text = box.value.trim();
+  if (!text) return;
+  const btn = document.getElementById('chatSend');
+  btn.disabled = true;
+  try{
+    const me = member_(S.me);
+    const r = await feedbackCall_('sendFeedback', {
+      threadId: chatThreadId_(), app: IS_LOCAL ? 'home' : 'web',
+      familyName: S.familyName, name: me ? me.name : '', message: text
+    });
+    box.value = '';
+    chatMessages = r.messages;
+    renderChat_('');
+    markChatSeen_();
+  }catch(err){
+    toastErr(err);
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+function renderChat_(note){
+  const body = document.getElementById('chatBody');
+  body.innerHTML = '<div class="bubble dev"><div class="who">開発者</div>' + esc(CHAT_WELCOME) + '</div>' +
+    chatMessages.map(function(m){
+      return '<div class="bubble ' + (m.from === 'dev' ? 'dev' : 'me') + '">' +
+        (m.from === 'dev' ? '<div class="who">開発者</div>' : '') + esc(m.text) +
+        (m.at ? '<div class="at">' + esc(m.at.slice(5, 16)) + '</div>' : '') + '</div>';
+    }).join('') +
+    (note ? '<div class="chat-note">' + esc(note) + '</div>' : '') +
+    '<div class="chat-note">送った内容は開発者だけが見ます。名前や住所などは書かないでね。</div>';
+  body.scrollTop = body.scrollHeight;
+}
+
+function lastDevId_(msgs){
+  const dev = msgs.filter(function(m){ return m.from === 'dev'; });
+  return dev.length ? dev[dev.length - 1].id : '';
+}
+
+function markChatSeen_(){
+  save_('rt_chat_seen', lastDevId_(chatMessages));
+  show('chatDot', false);
+}
+
+/** 起動したときに、まだ見ていない返事があれば 💬 に印を付ける */
+async function checkChatUnread_(){
+  if (!load_('rt_chat_thread', '')) return;   // 一度も送っていなければ返事もない
+  try{
+    const r = await feedbackCall_('getFeedbackThread', { threadId: chatThreadId_() });
+    const last = lastDevId_(r.messages);
+    show('chatDot', !!last && last !== load_('rt_chat_seen', ''));
+  }catch(e){ /* 圏外などは気にしない */ }
 }
 
 
