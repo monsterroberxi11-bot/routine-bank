@@ -552,11 +552,11 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
   </form>
 </div>
 
-<!-- ── 開発者の受信箱（URLの最後に #dev）───────────────── -->
+<!-- ── 管理者パネル（URLの最後に #dev）───────────────── -->
 <div id="devScreen" class="chat hidden">
   <div class="chat-top">
     <button class="btn tiny" onclick="devBack()" id="devBackBtn">← アプリへ</button>
-    <div class="chat-title" id="devTitle">開発者の受信箱</div>
+    <div class="chat-title" id="devTitle">管理者パネル</div>
     <button class="btn tiny" onclick="devRefresh()" aria-label="読み込み直す">↻</button>
   </div>
   <div class="chat-body" id="devBody"></div>
@@ -2038,7 +2038,7 @@ async function checkChatUnread_(){
 
 
 /* ============================================================
-   7.6 開発者の受信箱（アプリのURL＋#dev）
+   7.6 管理者パネル（アプリのURL＋#dev）
    開発者キー（ADMIN_KEY.txt）を一度入れると、この端末に覚えておく
    ============================================================ */
 
@@ -2059,7 +2059,7 @@ function openDevInbox(){
 
 function devAskKey_(error){
   show('devForm', false);
-  document.getElementById('devTitle').textContent = '開発者の受信箱';
+  document.getElementById('devTitle').textContent = '管理者パネル';
   document.getElementById('devBody').innerHTML =
     '<div class="card"><h2>開発者キー</h2><p class="muted">開発者だけが知っているキーを入れてください。この端末に覚えておきます。</p>' +
     '<div class="form"><label>キー<input type="password" id="devKeyInput" autocomplete="off"></label></div>' +
@@ -2075,7 +2075,7 @@ function devSaveKey(){
 async function devList_(){
   devThreadId = '';
   show('devForm', false);
-  document.getElementById('devTitle').textContent = '開発者の受信箱';
+  document.getElementById('devTitle').textContent = '管理者パネル';
   document.getElementById('devBackBtn').textContent = '← アプリへ';
   const body = document.getElementById('devBody');
   body.innerHTML = '<p class="chat-note">読み込み中…</p>';
