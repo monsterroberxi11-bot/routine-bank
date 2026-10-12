@@ -2025,6 +2025,8 @@ return API_FUNCTIONS;
 /* インストール版（PWA）のときは build-pwa.js がここにGASのURLを入れる。
    GASのWebアプリとして開いたときは空のまま → google.script.run を使う */
 const API_URL = '';
+/* 管理者パネルだけのアプリ（build-pwa.js --admin → pwa/admin/）では true になる */
+const ADMIN_APP = false;
 
 /* Routine Bank Offline（build-pwa.js --home）では、サーバーの処理（Code.gs）をこのページの中で動かす。
    そのとき LOCAL_API が用意される。データはこのスマホの中だけに保存（ログイン・ネット不要） */
@@ -2123,7 +2125,7 @@ window.addEventListener('online', function(){ flushOutbox(); });
 
 async function boot(){
   // 開発者の受信箱：URLの最後が #dev のときは、家庭のログインなしでこちらを開く
-  if (location.hash === '#dev'){ show('loading', false); openDevInbox(); return; }
+  if (ADMIN_APP || location.hash === '#dev'){ show('loading', false); openDevInbox(); return; }
   // Home版：ブラウザが勝手にデータを消さないようにお願いしておく（対応している機種だけ）
   if (IS_LOCAL){ try{ if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){} }
   S.token = load_('rt_token', '');
@@ -3703,6 +3705,7 @@ function openDevInbox(){
 
 function devAskKey_(error){
   show('devForm', false);
+  show('devBackBtn', !ADMIN_APP);
   document.getElementById('devTitle').textContent = '管理者パネル';
   document.getElementById('devBody').innerHTML =
     '<div class="card"><h2>開発者キー</h2><p class="muted">開発者だけが知っているキーを入れてください。この端末に覚えておきます。</p>' +
@@ -3721,6 +3724,7 @@ async function devList_(){
   show('devForm', false);
   document.getElementById('devTitle').textContent = '管理者パネル';
   document.getElementById('devBackBtn').textContent = '← アプリへ';
+  show('devBackBtn', !ADMIN_APP);   // 管理者パネルだけのアプリには戻る先がない
   const body = document.getElementById('devBody');
   body.innerHTML = '<p class="chat-note">読み込み中…</p>';
   try{
@@ -3735,7 +3739,9 @@ async function devList_(){
     devThreads.map(function(t, i){
       return '<button class="thread-item" onclick="devOpen(' + i + ')"><div class="top"><span class="name">' +
         esc(t.name || '名前なし') + (t.familyName ? '（' + esc(t.familyName) + '）' : '') + '</span>' +
-        (t.needsReply ? '<span class="badge pending">未返信</span>' : '<span class="badge ok">返信済</span>') + '</div>' +
+        (t.needsReply ? '<span class="badge pending">未返信</span>'
+          : t.needsReply === false ? '<span class="badge ok">返信済</span>'
+          : '<span class="badge gray">取り消しのみ</span>') + '</div>' +   // 相手が全部取り消したときは needsReply が無い
         '<div class="preview">' + esc(t.lastText) + '</div>' +
         '<div class="muted" style="font-size:11.5px">' + esc(t.app) + '・' + esc(String(t.lastAt).slice(5, 16)) + '・' + t.count + '件</div></button>';
     }).join('') +
@@ -3747,6 +3753,7 @@ async function devOpen(i){
   devThreadId = t.threadId;
   document.getElementById('devTitle').textContent = (t.name || '名前なし') + (t.familyName ? '（' + t.familyName + '）' : '');
   document.getElementById('devBackBtn').textContent = '← 一覧';
+  show('devBackBtn', true);
   show('devForm', true);
   document.getElementById('devBody').innerHTML = '<p class="chat-note">読み込み中…</p>';
   try{

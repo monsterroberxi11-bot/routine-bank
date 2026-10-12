@@ -1,5 +1,5 @@
 /* Routine Bank Service Worker（build-pwa.js が自動生成。直接編集しない） */
-const CACHE = 'routine-bank-4b8a2be5b6';
+const CACHE = 'routine-bank-45f262f6f9';
 const SHELL = ['./', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
@@ -8,7 +8,7 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys()
-    .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k.startsWith('routine-bank-') && !k.startsWith('routine-bank-home-')).map((k) => caches.delete(k))))
+    .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k.startsWith('routine-bank-') && !k.startsWith('routine-bank-home-') && !k.startsWith('routine-bank-admin-')).map((k) => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 
