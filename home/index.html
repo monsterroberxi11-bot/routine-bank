@@ -1,0 +1,3040 @@
+<!-- ============================================================
+     Routine Bank  ―  画面の骨組み
+     include('css') / include('js') のところに css.html / js.html の中身が入る
+     ============================================================ -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>Routine Bank Home</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#12a08c">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Routine Bank Home">
+  <style>
+/* ============================================================
+   Routine Bank  ―  見た目（スマホ基準。広い画面だけPC用に変える）
+   ============================================================ */
+
+:root{
+  --bg:#f3f6f6;
+  --card:#ffffff;
+  --line:#dfe6e6;
+  --text:#1b2424;
+  --muted:#667373;
+  --primary:#12a08c;      /* 時間＝ミントグリーン */
+  --primary-dark:#0c7d6d;
+  --primary-soft:#e3f5f2;
+  --ok:#1f9d55;
+  --warn:#d98a00;
+  --danger:#d64545;
+  --plus:#1f9d55;
+  --minus:#d0482c;
+  --radius:12px;
+  --tap:44px;
+}
+
+*{box-sizing:border-box;}
+html,body{margin:0; padding:0;}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;
+  background:var(--bg); color:var(--text);
+  font-size:15px; line-height:1.6; -webkit-text-size-adjust:100%;
+  -webkit-tap-highlight-color:transparent;
+}
+.hidden{display:none !important;}
+.muted{color:var(--muted); font-size:13px;}
+.error{color:var(--danger); font-size:13px; min-height:1.2em; margin:4px 0;}
+h1{font-size:20px; margin:0 0 8px;}
+h2{font-size:15px; margin:0 0 10px; font-weight:700;}
+.plus{color:var(--plus);}
+.minus{color:var(--minus);}
+.num{font-variant-numeric:tabular-nums;}
+
+/* ── 入口の画面 ───────────────── */
+.gate{
+  position:fixed; inset:0; background:var(--bg); z-index:50;
+  display:flex; align-items:center; justify-content:center; padding:20px; overflow-y:auto;
+}
+.gate-box{
+  background:var(--card); border-radius:var(--radius); padding:28px 22px;
+  width:100%; max-width:380px; text-align:center; box-shadow:0 2px 12px rgba(0,0,0,.06);
+}
+.gate-box .form{text-align:left; margin-top:16px;}
+.logo-clock{width:120px; height:120px; margin:0 auto 10px;}
+.logo-clock svg{width:100%; height:100%; display:block; filter:drop-shadow(0 4px 10px rgba(12,125,109,.25));}
+.lg-face{fill:#fff; stroke:var(--primary-dark); stroke-width:6;}
+.lg-sector{fill:var(--primary); opacity:.85;}
+.lg-tick{stroke:var(--text); stroke-width:4; stroke-linecap:round;}
+.lg-hour{stroke:var(--text); stroke-width:9; stroke-linecap:round;}
+.lg-min{stroke:var(--text); stroke-width:6; stroke-linecap:round;}
+.lg-sec{stroke:#e8590c; stroke-width:2.5; stroke-linecap:round;}
+.lg-pin{fill:#e8590c;}
+.auth-switch{margin-top:14px;}
+.auth-switch a{color:var(--primary-dark); font-weight:700; text-decoration:none;}
+.who-list{display:flex; flex-direction:column; gap:8px; margin-top:16px;}
+.who-btn{
+  border:1px solid var(--line); background:#fff; border-radius:10px;
+  padding:14px; font-size:16px; font-weight:700; cursor:pointer; min-height:var(--tap);
+}
+.who-btn:hover{border-color:var(--primary);}
+.spinner{
+  width:28px; height:28px; margin:0 auto 12px;
+  border:3px solid var(--line); border-top-color:var(--primary);
+  border-radius:50%; animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ── 上のバー・タブ ───────────────── */
+.topbar{
+  position:sticky; top:0; z-index:20;
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:10px 14px; padding-top:calc(10px + env(safe-area-inset-top));
+  background:var(--card); border-bottom:1px solid var(--line);
+}
+.brand{font-weight:800; color:var(--primary-dark);}
+.me-chip{
+  border:1px solid var(--line); background:#fff; border-radius:999px;
+  padding:6px 12px; font-weight:700; cursor:pointer; font-size:13px;
+}
+.tabs{display:none;}
+.bottomnav{
+  position:fixed; left:0; right:0; bottom:0; z-index:20;
+  display:flex; background:var(--card); border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.bottomnav button{
+  flex:1; border:0; background:none; padding:8px 2px 6px; position:relative;
+  font-size:10.5px; color:var(--muted); cursor:pointer; min-height:var(--tap);
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+}
+.bottomnav button .ico{font-size:19px; line-height:1;}
+.bottomnav button.active{color:var(--primary-dark); font-weight:700;}
+.dot{
+  position:absolute; top:4px; left:calc(50% + 8px); min-width:16px; height:16px; padding:0 4px;
+  border-radius:999px; background:var(--danger); color:#fff; font-size:10px; line-height:16px; font-weight:700;
+}
+
+main{padding:12px 12px 90px; max-width:900px; margin:0 auto;}
+.card{
+  background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+  padding:14px; margin-bottom:12px;
+}
+.card-head{display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:10px;}
+.card-head h2{margin:0;}
+
+/* ── 貯金の表示 ───────────────── */
+.bank-mini{
+  display:flex; justify-content:space-between; align-items:center; gap:8px;
+  padding:14px 16px; border-radius:var(--radius); margin-bottom:12px;
+  background:linear-gradient(135deg,var(--primary),var(--primary-dark)); color:#fff;
+}
+.bank-mini .label{font-size:12.5px; opacity:.9; font-weight:700;}
+.bank-mini .val{font-size:28px; font-weight:800; font-variant-numeric:tabular-nums; line-height:1.2;}
+.bank-mini .side{text-align:right; font-size:12.5px; line-height:1.7;}
+.bank-mini .side b{font-variant-numeric:tabular-nums;}
+.stat-row{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px;}
+.stat{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px; text-align:center;}
+.stat .k{font-size:11.5px; color:var(--muted); font-weight:700;}
+.stat .v{font-size:17px; font-weight:800; font-variant-numeric:tabular-nums;}
+
+/* ── ルーチン一覧 ───────────────── */
+.routine-list{display:flex; flex-direction:column; gap:8px;}
+.routine{
+  display:flex; align-items:center; gap:12px; text-align:left; width:100%;
+  border:1px solid var(--line); background:#fff; border-radius:12px; padding:14px; cursor:pointer;
+}
+.routine:hover{border-color:var(--primary);}
+.routine .play{
+  flex:0 0 auto; width:44px; height:44px; border-radius:50%; background:var(--primary); color:#fff;
+  display:flex; align-items:center; justify-content:center; font-size:18px;
+}
+.routine .name{font-weight:800; font-size:16px;}
+.routine .sub{font-size:12.5px; color:var(--muted);}
+.switch{display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; color:var(--muted); cursor:pointer;}
+.switch input{width:18px; height:18px; margin:0;}
+
+/* ── 実行中の画面 ───────────────── */
+.run{
+  position:fixed; inset:0; z-index:40; background:#0f2a27; color:#fff;
+  display:flex; flex-direction:column;
+  padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+}
+.run-top{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:12px 14px;}
+.run-top .btn{background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.2); color:#fff;}
+.run-title{font-weight:700; font-size:14px; opacity:.85; text-align:center; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.run-progress{height:5px; background:rgba(255,255,255,.12); margin:0 14px; border-radius:999px; overflow:hidden;}
+.run-progress div{height:100%; background:var(--primary); width:0; transition:width .3s;}
+.run-body{flex:1; overflow-y:auto; padding:18px 18px 24px; display:flex; flex-direction:column; align-items:center; text-align:center;}
+.run-count{font-size:13px; opacity:.7; font-weight:700;}
+.run-step{font-size:30px; font-weight:800; line-height:1.3; margin:6px 0 2px; word-break:break-word;}
+.run-target{font-size:14px; opacity:.75;}
+.run-clock{width:min(76vw,46vh,320px); aspect-ratio:1; margin:14px 0 6px; transition:opacity .2s;}
+.run-clock svg{width:100%; height:100%; display:block; overflow:visible;}
+.run-clock.paused{opacity:.45;}
+.ck-face{fill:rgba(255,255,255,.05); stroke:rgba(255,255,255,.18); stroke-width:2;}
+.ck-tick{stroke:rgba(255,255,255,.28); stroke-width:1.2; stroke-linecap:round;}
+.ck-tick.major{stroke:rgba(255,255,255,.7); stroke-width:2.6;}
+.ck-sector{fill:var(--primary);}
+.ck-sector.over{fill:#ff6b57;}
+.ck-edge{stroke:#fff; stroke-width:3; stroke-linecap:round;}
+.ck-hole{fill:#0f2a27;}
+.ck-sec{stroke:#ffd166; stroke-width:2; stroke-linecap:round;}
+.ck-pin{fill:#ffd166;}
+.ck-text{fill:#fff; font-size:27px; font-weight:800; text-anchor:middle; font-variant-numeric:tabular-nums;}
+.ck-text.long{font-size:20px;}
+.ck-text.over{fill:#ff8a73;}
+.ck-sub{fill:rgba(255,255,255,.6); font-size:10px; font-weight:700; text-anchor:middle; letter-spacing:1px;}
+.run-saved{font-size:14px; font-weight:700; min-height:1.6em;}
+.run-next{
+  width:100%; max-width:420px; margin:18px 0 12px; padding:22px 16px; border:0; border-radius:18px;
+  background:var(--primary); color:#fff; font-size:22px; font-weight:800; cursor:pointer;
+  box-shadow:0 6px 0 var(--primary-dark);
+}
+.run-next:active{transform:translateY(4px); box-shadow:0 2px 0 var(--primary-dark);}
+.run-sub{display:flex; gap:8px; width:100%; max-width:420px;}
+.run-sub .btn{flex:1; background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.2); color:#fff;}
+.run-upcoming{width:100%; max-width:420px; margin-top:20px; text-align:left; font-size:13px;}
+.run-upcoming .row{display:flex; justify-content:space-between; padding:6px 2px; border-bottom:1px solid rgba(255,255,255,.08); opacity:.7;}
+.run-upcoming .row.done{opacity:.45;}
+.done-big{font-size:46px; font-weight:800; font-variant-numeric:tabular-nums; margin:8px 0;}
+.done-table{width:100%; max-width:420px; text-align:left; margin:12px 0 18px; font-size:14px;}
+.done-table .row{display:flex; gap:8px; justify-content:space-between; padding:8px 2px; border-bottom:1px solid rgba(255,255,255,.1);}
+.done-table .reason{font-size:12px; opacity:.7;}
+.run .plus{color:#7de2c3;}
+.run .minus{color:#ff8a73;}
+
+/* ── 理由のチップ ───────────────── */
+.chips{display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 12px;}
+.chip{
+  border:1px solid var(--line); background:#fff; border-radius:999px; padding:8px 14px;
+  font-size:14px; font-weight:700; cursor:pointer;
+}
+.chip.active{background:var(--primary); border-color:var(--primary); color:#fff;}
+
+/* ── メンバー切替・期間切替 ───────────────── */
+.member-seg{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px;}
+.member-seg button{
+  flex:1 1 auto; min-width:70px; border:1px solid var(--line); background:#fff;
+  border-radius:10px; padding:9px 8px; font-weight:700; cursor:pointer; min-height:var(--tap);
+}
+.member-seg button.active{background:var(--primary); border-color:var(--primary); color:#fff;}
+.member-seg.small button{flex:0 0 auto; min-width:0; padding:6px 14px; min-height:34px; font-size:13px;}
+
+/* ── 交換先タイル ───────────────── */
+.tile-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:8px;}
+.tile{
+  border:1px solid var(--line); background:#fff; border-radius:12px;
+  padding:14px 10px; text-align:center; cursor:pointer; min-height:84px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+}
+.tile:hover{border-color:var(--primary);}
+.tile:disabled{opacity:.45; cursor:not-allowed;}
+.tile .name{font-weight:800; font-size:14.5px;}
+.tile .rate{font-size:12.5px; color:var(--muted);}
+
+/* ── リスト ───────────────── */
+.list{display:flex; flex-direction:column; gap:6px;}
+.list-item{
+  display:flex; justify-content:space-between; align-items:center; gap:10px;
+  padding:10px 12px; border:1px solid var(--line); border-radius:9px; background:#fff;
+}
+.list-item.col{flex-direction:column; align-items:stretch;}
+.list-item .main{min-width:0; flex:1;}
+.list-item .title{font-weight:700; font-size:14px;}
+.list-item .sub{font-size:12px; color:var(--muted);}
+.list-item .actions{display:flex; gap:6px; flex:0 0 auto; flex-wrap:wrap; justify-content:flex-end;}
+.list-head{display:flex; justify-content:space-between; align-items:center; gap:10px; cursor:pointer;}
+.steps-mini{margin-top:8px; font-size:12.5px; border-top:1px dashed var(--line); padding-top:6px;}
+.steps-mini .row{display:flex; justify-content:space-between; gap:8px; padding:2px 0;}
+.steps-mini .reason{color:var(--muted); font-size:11.5px; padding-left:10px;}
+.steps-mini .row.canceled > span{text-decoration:line-through; color:var(--muted);}
+.steps-mini .row.canceled b{color:var(--muted);}
+.list-item.canceled{background:#f6f7f7;}
+.list-item.canceled .title{color:var(--muted);}
+.list-head .btn.tiny{flex:0 0 auto;}
+.step-del{padding:2px 6px; min-height:26px; font-size:12px; margin-left:4px;}
+.empty{color:var(--muted); font-size:13px; text-align:center; padding:10px;}
+.val{font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap;}
+.badge{display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap;}
+.badge.pending{background:#fdf1da; color:var(--warn);}
+.badge.ok{background:#e6f4ea; color:var(--ok);}
+.badge.ng{background:#f8e5e5; color:var(--danger);}
+.badge.gray{background:#eef0f0; color:var(--muted);}
+
+/* ── 分析 ───────────────── */
+.bar-row{display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:13px;}
+.bar-row .k{flex:0 0 38%; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.bar-row .track{flex:1; height:10px; border-radius:999px; background:var(--line); overflow:hidden;}
+.bar-row .fill{height:100%; background:var(--minus); border-radius:999px;}
+.bar-row .n{flex:0 0 auto; font-weight:700; font-variant-numeric:tabular-nums; min-width:3em; text-align:right;}
+table.grid{width:100%; border-collapse:collapse; font-size:13px;}
+table.grid th,table.grid td{padding:7px 4px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap;}
+table.grid th:first-child,table.grid td:first-child{text-align:left; white-space:normal;}
+table.grid th{font-size:11.5px; color:var(--muted);}
+.compare{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+.compare .stat .v{font-size:16px;}
+
+/* ── フォーム・ボタン ───────────────── */
+input,select,textarea,button{font-family:inherit; font-size:16px;}
+input[type=range],input[type=checkbox]{accent-color:var(--primary);}
+input[type=text],input[type=password],input[type=number],select,textarea{
+  width:100%; padding:10px 12px; margin-top:4px;
+  border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--text); min-height:var(--tap);
+}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outline-offset:-1px;}
+.form label{display:block; margin-bottom:12px; font-size:13px; color:var(--muted); font-weight:600;}
+.form label.inline{display:flex; align-items:center; gap:8px;}
+.form label.inline input{width:auto; margin:0;}
+.btn{
+  border:1px solid var(--line); background:#fff; color:var(--text);
+  border-radius:9px; padding:10px 14px; cursor:pointer; min-height:var(--tap); font-weight:700; white-space:nowrap;
+}
+.btn:hover{filter:brightness(.97);}
+.btn.primary{background:var(--primary); border-color:var(--primary); color:#fff;}
+.btn.danger{color:var(--danger); border-color:#f0c8c8;}
+.btn.block{width:100%;}
+.btn.tiny{padding:5px 10px; min-height:32px; font-size:13px;}
+.btn:disabled{opacity:.5; cursor:not-allowed;}
+.btn-row{display:flex; gap:8px; flex-wrap:wrap;}
+
+/* ── ルーチン編集の動作行 ───────────────── */
+.step-edit{display:flex; gap:6px; align-items:center; margin-bottom:8px;}
+.step-edit input[type=text]{flex:1; margin:0;}
+.step-edit input[type=number]{width:58px; margin:0; padding:10px 6px; text-align:center;}
+.step-edit .u{font-size:12px; color:var(--muted);}
+.step-edit .btn{padding:6px 8px; min-height:38px;}
+
+/* ── ダイアログ・トースト ───────────────── */
+.modal{
+  position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:60;
+  display:flex; align-items:flex-end; justify-content:center;
+}
+.modal-box{
+  background:#fff; color:var(--text); border-radius:16px 16px 0 0; padding:18px;
+  padding-bottom:calc(18px + env(safe-area-inset-bottom));
+  width:100%; max-width:520px; max-height:90vh; overflow-y:auto;
+}
+.modal-actions{display:flex; gap:8px; margin-top:10px;}
+.modal-actions .btn{flex:1;}
+.toast{
+  position:fixed; left:50%; bottom:86px; transform:translateX(-50%);
+  background:#23282e; color:#fff; padding:12px 18px; border-radius:10px;
+  font-size:14px; z-index:70; max-width:90vw; text-align:center; box-shadow:0 4px 16px rgba(0,0,0,.25);
+}
+.toast.err{background:var(--danger);}
+.toast.ok{background:var(--ok);}
+
+/* ============================================================
+   PC（画面が広いとき）
+   ============================================================ */
+@media (min-width:760px){
+  .bottomnav{display:none;}
+  .tabs{
+    display:flex; gap:4px; padding:0 14px; background:var(--card);
+    border-bottom:1px solid var(--line); position:sticky; top:53px; z-index:19;
+  }
+  .tabs button{
+    border:0; background:none; padding:12px 16px; cursor:pointer; font-size:14px; font-weight:700;
+    color:var(--muted); border-bottom:2px solid transparent; position:relative;
+  }
+  .tabs button.active{color:var(--primary-dark); border-bottom-color:var(--primary);}
+  .tabs .dot{position:static; display:inline-block; margin-left:4px;}
+  main{padding:16px 16px 40px;}
+  .tile-grid{grid-template-columns:repeat(4,1fr);}
+  .modal{align-items:center;}
+  .modal-box{border-radius:14px;}
+  .toast{bottom:32px;}
+}
+</style>
+
+</head>
+<body>
+
+<!-- ── 読み込み中 ───────────────── -->
+<div id="loading" class="gate">
+  <div class="gate-box">
+    <div class="spinner"></div>
+    <p class="muted">読み込み中…</p>
+  </div>
+</div>
+
+<!-- ── 家庭ログイン／新規登録 ───────────────── -->
+<div id="authGate" class="gate hidden">
+  <div class="gate-box">
+    <div class="logo-clock" id="logoClock"></div>
+    <h1>Routine Bank Home</h1>
+
+    <div id="authLogin">
+      <p class="muted">家庭名とパスワードでログインしてください。</p>
+      <form class="form" onsubmit="doLogin(); return false;">
+        <label>家庭名<input type="text" id="au_family" autocomplete="username"></label>
+        <label>パスワード<input type="password" id="au_password" autocomplete="current-password"></label>
+        <p class="error" id="au_error"></p>
+        <button class="btn primary block" type="submit">ログイン</button>
+      </form>
+      <p class="muted auth-switch">はじめて使う家庭ですか？
+        <a href="#" onclick="showAuthMode('register'); return false;">新しい家庭を登録する</a>
+      </p>
+    </div>
+
+    <div id="authRegister" class="hidden">
+      <p class="muted" id="rg_intro">家庭名とパスワードは家族で共有します。PINは親だけが知っている4けたの数字で、交換の承認や設定の変更に使います。</p>
+      <form class="form" onsubmit="doRegister(); return false;">
+        <label>家庭名<input type="text" id="rg_family" placeholder="例：山田家"></label>
+        <label id="rg_pwLabel">パスワード（4文字以上）<input type="password" id="rg_password" autocomplete="new-password"></label>
+        <label>親の名前<input type="text" id="rg_parent" placeholder="例：お母さん"></label>
+        <label>親のPIN（数字4けた）<input type="password" id="rg_pin" inputmode="numeric" maxlength="4" autocomplete="off"></label>
+        <p class="error" id="rg_error"></p>
+        <button class="btn primary block" type="submit" id="rg_submit">登録してはじめる</button>
+      </form>
+      <p class="muted auth-switch" id="rg_back"><a href="#" onclick="showAuthMode('login'); return false;">ログインにもどる</a></p>
+    </div>
+  </div>
+</div>
+
+<!-- ── この端末を使うのは誰？ ───────────────── -->
+<div id="whoGate" class="gate hidden">
+  <div class="gate-box">
+    <h1>だれが使う？</h1>
+    <p class="muted">この端末で使う人をえらんでね（あとで変えられます）</p>
+    <div id="whoList" class="who-list"></div>
+  </div>
+</div>
+
+<!-- ── 上のバー・タブ ───────────────── -->
+<header class="topbar hidden" id="topbar">
+  <div class="brand">⏱ Routine Bank Home</div>
+  <button class="me-chip" id="meChip" onclick="openWho()"></button>
+</header>
+<nav class="tabs hidden" id="tabs"></nav>
+
+<main id="main" class="hidden">
+  <!-- タイマー -->
+  <section id="view-timer" class="view">
+    <div class="bank-mini" id="bankMini"></div>
+    <div class="card">
+      <div class="card-head">
+        <h2>ルーチンをえらぶ</h2>
+        <label class="switch"><input type="checkbox" id="showRemaining" onchange="setShowRemaining(this.checked)"> 残り時間を表示</label>
+      </div>
+      <div id="routineList" class="routine-list"></div>
+    </div>
+    <div class="card hidden" id="outboxCard"></div>
+  </section>
+
+  <!-- 貯金・交換 -->
+  <section id="view-bank" class="view hidden">
+    <div class="member-seg" id="bankMembers"></div>
+    <div id="bankSummary"></div>
+    <div class="card">
+      <h2>交換する</h2>
+      <div id="rewardList" class="tile-grid"></div>
+    </div>
+    <div class="card">
+      <h2>承認待ち</h2>
+      <div id="pendingList" class="list"></div>
+    </div>
+    <div class="card">
+      <h2>交換の履歴</h2>
+      <div id="exchangeList" class="list"></div>
+    </div>
+    <div class="card">
+      <h2>最近の記録</h2>
+      <div id="runList" class="list"></div>
+    </div>
+  </section>
+
+  <!-- 分析 -->
+  <section id="view-analysis" class="view hidden">
+    <div class="member-seg" id="anMembers"></div>
+    <div class="member-seg small" id="anDays"></div>
+    <div id="analysis"></div>
+  </section>
+
+  <!-- 設定 -->
+  <section id="view-settings" class="view hidden">
+    <div id="settings"></div>
+  </section>
+</main>
+<nav class="bottomnav hidden" id="bottomnav"></nav>
+
+<!-- ── ルーチン実行中の画面（全画面）───────────────── -->
+<div id="runScreen" class="run hidden">
+  <div class="run-top">
+    <button class="btn tiny" onclick="quitRun()">やめる</button>
+    <div class="run-title" id="runTitle"></div>
+    <button class="btn tiny" id="runEye" onclick="toggleRunShow()"></button>
+  </div>
+  <div class="run-progress"><div id="runBar"></div></div>
+  <div class="run-body" id="runBody">
+    <div class="run-count" id="runCount"></div>
+    <div class="run-step" id="runStep"></div>
+    <div class="run-target" id="runTarget"></div>
+    <div class="run-clock" id="runClock"></div>
+    <div class="run-saved" id="runSaved"></div>
+    <button class="run-next" id="runNext" onclick="nextStep()">できた！ 次へ ▶</button>
+    <div class="run-sub">
+      <button class="btn" id="runPause" onclick="togglePause()">⏸ 一時停止</button>
+      <button class="btn" onclick="skipStep()">⏭ とばす</button>
+    </div>
+    <div class="run-upcoming" id="runUpcoming"></div>
+  </div>
+  <div class="run-body hidden" id="runDone"></div>
+</div>
+
+<!-- ── ダイアログ ───────────────── -->
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <h2 id="modalTitle"></h2>
+    <div id="modalBody"></div>
+    <p class="error" id="modalError"></p>
+    <div class="modal-actions">
+      <button class="btn" id="modalCancel">やめる</button>
+      <button class="btn primary" id="modalOk">OK</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script>
+/* ============================================================
+   Routine Bank Home  ―  サーバー（Code.gs）をスマホの中で動かすための土台
+   build-pwa.js --home がこのファイルと Code.gs を index.html に埋め込む。
+
+   GASの SpreadsheetApp などを「にせもの」で用意して、データはスマホの localStorage に保存する。
+   こうすると Code.gs のルール（残高・承認・無効化…）を1行も変えずに、ネットなしで使える。
+   ============================================================ */
+
+const LocalStore = (function () {
+  const PREFIX = 'rbh_';          // このアプリのデータだと分かるように付ける
+  const LIST_KEY = PREFIX + 'sheets';
+  const PROP_KEY = PREFIX + 'props';
+
+  let cache = {};                 // シート名 → 2次元配列（読み込んだものをメモリに置いておく）
+  let dirty = {};                 // 書き換えたシート名
+  let props = null;
+  let propsDirty = false;
+
+  function read(key, def) {
+    try { const v = localStorage.getItem(key); return v == null ? def : JSON.parse(v); } catch (e) { return def; }
+  }
+  function sheetNames() { return read(LIST_KEY, []); }
+
+  function load(name) {
+    if (!cache[name]) cache[name] = read(PREFIX + 'sheet:' + name, null);
+    return cache[name];
+  }
+
+  /** 1回の操作が終わったら、書き換えたシートだけ保存する */
+  function flush() {
+    try {
+      Object.keys(dirty).forEach(function (name) {
+        localStorage.setItem(PREFIX + 'sheet:' + name, JSON.stringify(cache[name]));
+      });
+      if (propsDirty) localStorage.setItem(PROP_KEY, JSON.stringify(props));
+    } catch (e) {
+      rollback();
+      throw new Error('スマホの保存容量がいっぱいです。設定からバックアップを書き出して、古いデータを整理してください');
+    }
+    dirty = {};
+    propsDirty = false;
+  }
+
+  /** 操作の途中でエラーになったら、保存前の状態に戻す（中途半端な書き込みを残さない） */
+  function rollback() {
+    cache = {};
+    dirty = {};
+    props = null;
+    propsDirty = false;
+  }
+
+  function makeSheet(name) {
+    const data = load(name);
+    const touch = function () { dirty[name] = true; };
+    const range = function (r, c, nr, nc) {
+      nr = nr || 1; nc = nc || 1;
+      return {
+        setNumberFormat: function () { return this; },
+        setFontWeight: function () { return this; },
+        setBackground: function () { return this; },
+        getValues: function () {
+          const out = [];
+          for (let i = 0; i < nr; i++) {
+            const row = [];
+            for (let j = 0; j < nc; j++) {
+              const v = (data[r - 1 + i] || [])[c - 1 + j];
+              row.push(v == null ? '' : v);
+            }
+            out.push(row);
+          }
+          return out;
+        },
+        getDisplayValues: function () {
+          return this.getValues().map(function (row) { return row.map(function (v) { return String(v); }); });
+        },
+        setValues: function (vals) {
+          vals.forEach(function (row, i) {
+            data[r - 1 + i] = data[r - 1 + i] || [];
+            row.forEach(function (v, j) { data[r - 1 + i][c - 1 + j] = v; });
+          });
+          touch();
+          return this;
+        },
+        setValue: function (v) {
+          data[r - 1] = data[r - 1] || [];
+          data[r - 1][c - 1] = v;
+          touch();
+          return this;
+        }
+      };
+    };
+    return {
+      getName: function () { return name; },
+      getLastRow: function () { return data.length; },
+      getLastColumn: function () { return data.reduce(function (m, row) { return Math.max(m, row.length); }, 0); },
+      getMaxRows: function () { return Math.max(1000, data.length); },
+      getRange: range,
+      setFrozenRows: function () {},
+      appendRow: function (row) { data.push(row.slice()); touch(); }
+    };
+  }
+
+  const spreadsheet = {
+    getSheetByName: function (name) { return load(name) ? makeSheet(name) : null; },
+    insertSheet: function (name) {
+      cache[name] = [];
+      dirty[name] = true;
+      const names = sheetNames();
+      if (names.indexOf(name) < 0) { names.push(name); localStorage.setItem(LIST_KEY, JSON.stringify(names)); }
+      return makeSheet(name);
+    },
+    getSheets: function () { return sheetNames().map(makeSheet); },
+    deleteSheet: function () {}
+  };
+
+  /* ── SHA-256（GASの Utilities.computeDigest の代わり。PINやパスワードのハッシュに使う）── */
+  const K = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
+
+  function sha256Bytes(str) {
+    const msg = new TextEncoder().encode(str);
+    const len = msg.length;
+    const total = Math.ceil((len + 9) / 64) * 64;
+    const buf = new Uint8Array(total);
+    buf.set(msg);
+    buf[len] = 0x80;
+    const bits = len * 8;
+    const view = new DataView(buf.buffer);
+    view.setUint32(total - 8, Math.floor(bits / 0x100000000));
+    view.setUint32(total - 4, bits >>> 0);
+    const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    const W = new Array(64);
+    const rotr = function (x, n) { return (x >>> n) | (x << (32 - n)); };
+    for (let off = 0; off < total; off += 64) {
+      for (let i = 0; i < 16; i++) W[i] = view.getUint32(off + i * 4);
+      for (let i = 16; i < 64; i++) {
+        const s0 = rotr(W[i - 15], 7) ^ rotr(W[i - 15], 18) ^ (W[i - 15] >>> 3);
+        const s1 = rotr(W[i - 2], 17) ^ rotr(W[i - 2], 19) ^ (W[i - 2] >>> 10);
+        W[i] = (W[i - 16] + s0 + W[i - 7] + s1) >>> 0;
+      }
+      let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+      for (let i = 0; i < 64; i++) {
+        const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + W[i]) >>> 0;
+        const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+        h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+      }
+      H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;
+      H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;
+    }
+    const out = [];
+    H.forEach(function (x) { out.push(x >>> 24, (x >>> 16) & 255, (x >>> 8) & 255, x & 255); });
+    return out.map(function (b) { return b > 127 ? b - 256 : b; });   // GASと同じ「符号つきバイト」
+  }
+
+  function formatDate(date, tz, fmt) {
+    const parts = {};
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+    }).formatToParts(date).forEach(function (p) { parts[p.type] = p.value; });
+    const day = parts.year + '-' + parts.month + '-' + parts.day;
+    return fmt === 'yyyy-MM-dd' ? day : day + ' ' + parts.hour + ':' + parts.minute + ':' + parts.second;
+  }
+
+  const gasLike = {
+    SpreadsheetApp: { getActiveSpreadsheet: function () { return spreadsheet; } },
+    PropertiesService: {
+      getScriptProperties: function () {
+        if (!props) props = read(PROP_KEY, {});
+        return {
+          getProperty: function (k) { return k in props ? props[k] : null; },
+          setProperty: function (k, v) { props[k] = String(v); propsDirty = true; },
+          deleteProperty: function (k) { delete props[k]; propsDirty = true; }
+        };
+      }
+    },
+    LockService: { getScriptLock: function () { return { tryLock: function () { return true; }, releaseLock: function () {} }; } },
+    Utilities: {
+      getUuid: function () {
+        return (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+          : 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+      },
+      DigestAlgorithm: { SHA_256: 'SHA_256' },
+      Charset: { UTF_8: 'UTF_8' },
+      computeDigest: function (alg, str) { return sha256Bytes(str); },
+      formatDate: formatDate
+    }
+  };
+
+  /* ── バックアップ（書き出し・読み込み・全部消す）── */
+  function allKeys() {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k.indexOf(PREFIX) === 0) keys.push(k);
+    }
+    return keys;
+  }
+
+  function exportAll(extra) {
+    const data = {};
+    allKeys().forEach(function (k) { data[k] = localStorage.getItem(k); });
+    return JSON.stringify({ app: 'routine-bank-home', version: 1, exportedAt: new Date().toISOString(), data: data, extra: extra || {} });
+  }
+
+  function importAll(text) {
+    const obj = JSON.parse(text);
+    if (!obj || obj.app !== 'routine-bank-home' || !obj.data) throw new Error('Routine Bank Home のバックアップファイルではありません');
+    allKeys().forEach(function (k) { localStorage.removeItem(k); });
+    Object.keys(obj.data).forEach(function (k) { if (k.indexOf(PREFIX) === 0) localStorage.setItem(k, obj.data[k]); });
+    rollback();
+    return obj.extra || {};
+  }
+
+  function clearAll() {
+    allKeys().forEach(function (k) { localStorage.removeItem(k); });
+    rollback();
+  }
+
+  return { gas: gasLike, flush: flush, rollback: rollback, exportAll: exportAll, importAll: importAll, clearAll: clearAll };
+})();
+
+const LOCAL_API = (function (SpreadsheetApp, PropertiesService, LockService, Utilities) {
+const HtmlService = null, ContentService = null;
+/**
+ * ========================================================
+ *  Routine Bank  ―  サーバー側（Google Apps Script）
+ * ========================================================
+ *
+ *  しくみ：
+ *    ルーチン（例：朝の支度）は「動作」（歯みがき3分 → 着替え5分 …）の並び。
+ *    1つの動作を目標より早く終えたら、余った時間が「時間貯金」に入る。
+ *    オーバーしたら貯金から引かれる（理由も記録して、あとで分析できる）。
+ *    貯めた時間は、ゲーム時間・換金などに交換を申請でき、親がPINで承認する。
+ *
+ *  大事な考え方：「履歴は消さない（追記だけ）」（家事ポイントアプリと同じ方針）
+ *    実行記録・交換申請は1行ずつ足していくだけ。間違いは【状態】を変えて無効にする。
+ *    貯金残高は保存せず、履歴の合計を毎回その場で計算する。
+ *
+ *  家庭ごとにパスワードでログイン（セッショントークン）。
+ *  親の操作（承認・設定変更）は、親メンバーごとの4桁PINで確認する。
+ */
+
+// ── シート名 ───────────────────────────────
+const SHEET_FAMILY   = '家庭';
+const SHEET_SESSION  = 'セッション';
+const SHEET_MEMBER   = 'メンバー';
+const SHEET_ROUTINE  = 'ルーチン';
+const SHEET_STEP     = '動作';
+const SHEET_REWARD   = '交換先';
+const SHEET_RUNLOG   = '実行記録';
+const SHEET_EXCHANGE = '交換申請';
+const SHEET_ERRORLOG = 'エラーログ';
+
+// ── 各シートの見出し（列を増やすときは必ず末尾に足す）───────────────
+const HEAD_FAMILY   = ['家庭ID', '家庭名', 'パスワードハッシュ', 'ソルト', '作成日時'];
+const HEAD_SESSION  = ['トークン', '家庭ID', '発行日時', '状態'];
+const HEAD_MEMBER   = ['メンバーID', '家庭ID', '名前', '役割', '表示順', '有効', 'PINハッシュ', 'PINソルト'];
+// 対象メンバーID：空なら家族の誰でも使えるルーチン
+// 作成者ID：子どもが作ったルーチンなら、その子のID（その子は自分で編集できる）。親が作ったものは空でもよい
+const HEAD_ROUTINE  = ['ルーチンID', '家庭ID', 'ルーチン名', '対象メンバーID', '表示順', '有効', '作成者ID'];
+const HEAD_STEP     = ['動作ID', '家庭ID', 'ルーチンID', '動作名', '目標秒', '表示順', '有効'];
+// 1分あたり：貯金1分を交換すると何（単位）になるか。例）ゲーム時間＝1分あたり1・単位「分」、換金＝1分あたり10・単位「円」
+const HEAD_REWARD   = ['交換先ID', '家庭ID', '交換先名', '1分あたり', '単位', '表示順', '有効'];
+// 1行＝1つの動作の結果。貯金秒＝目標秒−実績秒（オーバーしたらマイナス）。
+// 名前・目標秒などは「記録した時点の値」をコピーして保存する（あとで設定を変えても過去は変わらない）。
+const HEAD_RUNLOG   = ['記録ID', '家庭ID', '実行ID', '記録日時', '実行日', 'メンバーID', 'メンバー名',
+                       'ルーチンID', 'ルーチン名', '動作ID', '動作名', '目標秒', '実績秒', '貯金秒',
+                       'オーバー理由', '残り時間表示', '状態', '取消理由'];
+// 承認待ち・承認の申請は「使う秒」を貯金から引いた扱い。却下・取消になると戻る。
+const HEAD_EXCHANGE = ['申請ID', '家庭ID', '申請日時', 'メンバーID', 'メンバー名', '交換先ID', '交換先名',
+                       '使う秒', '換算値', '単位', 'メモ', '状態', '処理日時', '処理者ID', '処理者名', '却下理由'];
+const HEAD_ERRORLOG = ['日時', '家庭ID', '関数名', 'エラー内容', 'スタック'];
+
+const ALL_SHEETS = [
+  [SHEET_FAMILY, HEAD_FAMILY], [SHEET_SESSION, HEAD_SESSION], [SHEET_MEMBER, HEAD_MEMBER],
+  [SHEET_ROUTINE, HEAD_ROUTINE], [SHEET_STEP, HEAD_STEP], [SHEET_REWARD, HEAD_REWARD],
+  [SHEET_RUNLOG, HEAD_RUNLOG], [SHEET_EXCHANGE, HEAD_EXCHANGE], [SHEET_ERRORLOG, HEAD_ERRORLOG]
+];
+// 見出しを変えたらこの番号を上げる → 次の呼び出しで自動的にシートが整う
+const SCHEMA_VERSION = '2';
+
+// ── 状態 ────────────────────────────────
+const ROLE_PARENT = '親';
+const ROLE_CHILD  = '子';
+const ST_ACTIVE   = '有効';
+const ST_CANCELED = '取消済';
+const EX_PENDING  = '承認待ち';
+const EX_APPROVED = '承認';
+const EX_REJECTED = '却下';
+const EX_CANCELED = '取消';
+const ST_SESSION_ACTIVE   = '有効';
+const ST_SESSION_INACTIVE = '無効';
+
+
+/* ============================================================
+ *  1. 入口（GASのWebアプリ／PWA用API）
+ * ========================================================== */
+
+function doGet() {
+  return HtmlService.createTemplateFromFile('index')
+    .evaluate()
+    .setTitle('Routine Bank')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+/**
+ * インストール版（PWA）からの呼び出し口。{fn: '関数名', args: [引数...]} をPOSTしてもらい、JSONで返す。
+ * ★呼べるのは API_FUNCTIONS に書いた関数だけ
+ */
+const API_FUNCTIONS = {
+  registerFamily: registerFamily, loginFamily: loginFamily, logoutFamily: logoutFamily,
+  getBootstrap: getBootstrap, saveRun: saveRun,
+  requestExchange: requestExchange, cancelExchange: cancelExchange, decideExchange: decideExchange,
+  getExchanges: getExchanges, getHistory: getHistory, getAnalysis: getAnalysis, cancelRun: cancelRun,
+  verifyParentPin: verifyParentPin, saveMember: saveMember, saveRoutine: saveRoutine,
+  saveReward: saveReward, changeFamilyPassword: changeFamilyPassword
+};
+
+function doPost(e) {
+  let out;
+  try {
+    const req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    const fn = Object.prototype.hasOwnProperty.call(API_FUNCTIONS, req.fn) ? API_FUNCTIONS[req.fn] : null;
+    if (!fn) throw new Error('不明な操作です: ' + req.fn);
+    out = { ok: true, result: fn.apply(null, Array.isArray(req.args) ? req.args : []) };
+  } catch (err) {
+    out = { ok: false, error: (err && err.message) || String(err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(out))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+
+/* ============================================================
+ *  2. シートの準備（自動。手で実行しなくてよい）
+ * ========================================================== */
+
+function ss_() {
+  return SpreadsheetApp.getActiveSpreadsheet();
+}
+
+/** シートがまだ無い・見出しが古いときだけ整える（毎回のチェックはプロパティ1つ読むだけ） */
+function ensureSchema_() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('schemaVersion') === SCHEMA_VERSION) return;
+  withLock_(function () {
+    const ss = ss_();
+    ALL_SHEETS.forEach(function (pair) {
+      const sh = ensureSheet_(ss, pair[0], pair[1]);
+      sh.getRange(1, 1, sh.getMaxRows(), pair[1].length).setNumberFormat('@');
+    });
+    const def = ss.getSheetByName('シート1') || ss.getSheetByName('Sheet1');
+    if (def && def.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(def);
+    props.setProperty('schemaVersion', SCHEMA_VERSION);
+  });
+}
+
+/** スプレッドシートのメニューから手動でやり直したいとき用 */
+function setupSheets() {
+  PropertiesService.getScriptProperties().deleteProperty('schemaVersion');
+  ensureSchema_();
+}
+
+function ensureSheet_(ss, name, headers) {
+  let sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  const lastCol = Math.max(sh.getLastColumn(), 1);
+  const existing = sh.getRange(1, 1, 1, lastCol).getValues()[0].filter(function (v) { return v !== ''; });
+  if (existing.length < headers.length) {
+    const missing = headers.slice(existing.length);
+    sh.getRange(1, existing.length + 1, 1, missing.length).setValues([missing])
+      .setFontWeight('bold').setBackground('#f1f3f4');
+  }
+  sh.setFrozenRows(1);
+  return sh;
+}
+
+
+/* ============================================================
+ *  3. 共通ヘルパー
+ * ========================================================== */
+
+/** シートを「見出し名→値」のオブジェクト配列にして返す */
+function readSheet_(name) {
+  const sh = ss_().getSheetByName(name);
+  if (!sh || sh.getLastRow() < 2) return [];
+  const values = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getDisplayValues();
+  const headers = values[0];
+  return values.slice(1).map(function (row, i) {
+    const obj = { _row: i + 2 };
+    headers.forEach(function (h, c) { if (h) obj[h] = row[c]; });
+    return obj;
+  });
+}
+
+/** 家庭IDで絞り込んで読む */
+function readFamily_(name, familyId) {
+  return readSheet_(name).filter(function (r) { return r['家庭ID'] === familyId; });
+}
+
+function isTrue_(v) {
+  const s = String(v).trim().toUpperCase();
+  return s === 'TRUE' || s === '1' || s === 'はい' || s === '有効' || s === '';
+}
+
+function num_(v) {
+  const n = Number(v);
+  return isFinite(n) ? n : 0;
+}
+
+/** 1行追記（全部文字列として保存して、日付や数字に勝手に変換されないようにする） */
+function appendRow_(sheetName, headers, obj) {
+  const sh = ss_().getSheetByName(sheetName);
+  const row = headers.map(function (h) { return obj[h] == null ? '' : String(obj[h]); });
+  sh.getRange(sh.getLastRow() + 1, 1, 1, headers.length).setNumberFormat('@').setValues([row]);
+}
+
+/** 複数行をまとめて追記 */
+function appendRows_(sheetName, headers, objs) {
+  if (!objs.length) return;
+  const sh = ss_().getSheetByName(sheetName);
+  const rows = objs.map(function (obj) {
+    return headers.map(function (h) { return obj[h] == null ? '' : String(obj[h]); });
+  });
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, headers.length).setNumberFormat('@').setValues(rows);
+}
+
+/** ある行の、見出し名で指定したセルを書き換える。values = {見出し名: 値} */
+function updateRow_(sheetName, headers, rowNumber, values) {
+  const sh = ss_().getSheetByName(sheetName);
+  Object.keys(values).forEach(function (h) {
+    const col = headers.indexOf(h) + 1;
+    if (col < 1) throw new Error('列が見つかりません: ' + h);
+    sh.getRange(rowNumber, col).setNumberFormat('@').setValue(String(values[h]));
+  });
+}
+
+function nextId_(sheetName, prefix) {
+  const sh = ss_().getSheetByName(sheetName);
+  const last = sh.getLastRow();
+  let n = 0;
+  if (last >= 2) {
+    sh.getRange(2, 1, last - 1, 1).getDisplayValues().forEach(function (r) {
+      const m = String(r[0]).match(/^[A-Z](\d+)$/);
+      if (m) n = Math.max(n, Number(m[1]));
+    });
+  }
+  return prefix + ('00000' + (n + 1)).slice(-5);
+}
+
+function nowStr_() {
+  return Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+}
+
+function todayStr_() {
+  return Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+}
+
+function addDaysStr_(dateStr, delta) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + delta);
+  return Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd');
+}
+
+/** その日を含む週の月曜日（'yyyy-MM-dd'） */
+function weekStartStr_(dateStr) {
+  const dow = new Date(dateStr + 'T00:00:00Z').getUTCDay(); // 0=日
+  return addDaysStr_(dateStr, -((dow + 6) % 7));
+}
+
+function withLock_(fn) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) throw new Error('他の人が保存中です。少し待ってもう一度押してください');
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function logError_(functionName, err, familyId) {
+  try {
+    const sh = ss_().getSheetByName(SHEET_ERRORLOG);
+    if (!sh) return;
+    sh.appendRow([nowStr_(), familyId || '', functionName, (err && err.message) || String(err), (err && err.stack) || '']);
+  } catch (e) {
+    // ログ自体が失敗してもアプリは止めない
+  }
+}
+
+/** 公開関数の本体をこれで包む。シートの自動準備と、エラーの記録をまとめて行う */
+function guarded_(name, fn) {
+  let familyId = null;
+  try {
+    ensureSchema_();
+    return fn(function (id) { familyId = id; });
+  } catch (err) {
+    logError_(name, err, familyId);
+    throw err;
+  }
+}
+
+/** トークンを確認して、家庭ID入りのセッション情報を返す */
+function session_(token, setFamily) {
+  const sess = resolveSession_(token);
+  setFamily(sess.familyId);
+  return sess;
+}
+
+
+/* ============================================================
+ *  4. 家庭・ログイン・PIN
+ * ========================================================== */
+
+function sha256Hex_(str) {
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, str, Utilities.Charset.UTF_8);
+  return bytes.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join('');
+}
+
+function hashSecret_(secret, salt) {
+  return sha256Hex_(salt + ':' + String(secret));
+}
+
+function findFamilyByName_(familyName) {
+  const target = String(familyName || '').trim();
+  if (!target) return null;
+  return readSheet_(SHEET_FAMILY).filter(function (r) { return String(r['家庭名']).trim() === target; })[0] || null;
+}
+
+function createSession_(familyId) {
+  const token = Utilities.getUuid();
+  appendRow_(SHEET_SESSION, HEAD_SESSION, { 'トークン': token, '家庭ID': familyId, '発行日時': nowStr_(), '状態': ST_SESSION_ACTIVE });
+  return token;
+}
+
+function resolveSession_(token) {
+  if (!token) throw new Error('ログインしてください');
+  const row = readSheet_(SHEET_SESSION).filter(function (r) {
+    return r['トークン'] === token && r['状態'] === ST_SESSION_ACTIVE;
+  })[0];
+  if (!row) throw new Error('セッションが切れました。もう一度ログインしてください');
+  const family = readSheet_(SHEET_FAMILY).filter(function (r) { return r['家庭ID'] === row['家庭ID']; })[0];
+  if (!family) throw new Error('家庭情報が見つかりません');
+  return { familyId: row['家庭ID'], familyName: family['家庭名'] };
+}
+
+function checkPinFormat_(pin) {
+  if (!/^\d{4}$/.test(String(pin || ''))) throw new Error('PINは数字4けたで入力してください');
+}
+
+/**
+ * 新しい家庭を登録する。最初の親メンバー（PIN付き）を作り、ログイン状態にして返す。
+ * args = {familyName, password, parentName, pin}
+ */
+function registerFamily(args) {
+  return guarded_('registerFamily', function (setFamily) {
+    const familyName = String(args && args.familyName || '').trim();
+    const password = String(args && args.password || '');
+    const parentName = String(args && args.parentName || '').trim();
+    if (!familyName) throw new Error('家庭名を入力してください');
+    if (password.length < 4) throw new Error('パスワードは4文字以上にしてください');
+    if (!parentName) throw new Error('親の名前を入力してください');
+    checkPinFormat_(args.pin);
+
+    return withLock_(function () {
+      if (findFamilyByName_(familyName)) throw new Error('その家庭名はすでに使われています。別の名前にしてください');
+      const familyId = nextId_(SHEET_FAMILY, 'F');
+      setFamily(familyId);
+      const salt = Utilities.getUuid();
+      appendRow_(SHEET_FAMILY, HEAD_FAMILY, {
+        '家庭ID': familyId, '家庭名': familyName, 'パスワードハッシュ': hashSecret_(password, salt),
+        'ソルト': salt, '作成日時': nowStr_()
+      });
+      const pinSalt = Utilities.getUuid();
+      appendRow_(SHEET_MEMBER, HEAD_MEMBER, {
+        'メンバーID': nextId_(SHEET_MEMBER, 'M'), '家庭ID': familyId, '名前': parentName, '役割': ROLE_PARENT,
+        '表示順': 1, '有効': 'TRUE', 'PINハッシュ': hashSecret_(args.pin, pinSalt), 'PINソルト': pinSalt
+      });
+      seedDefaults_(familyId);
+      return { token: createSession_(familyId), familyName: familyName };
+    });
+  });
+}
+
+/** 新しい家庭に、すぐ試せるルーチンと交換先を1つずつ入れておく */
+function seedDefaults_(familyId) {
+  const routineId = nextId_(SHEET_ROUTINE, 'R');
+  appendRow_(SHEET_ROUTINE, HEAD_ROUTINE, {
+    'ルーチンID': routineId, '家庭ID': familyId, 'ルーチン名': '朝の支度', '対象メンバーID': '', '表示順': 1, '有効': 'TRUE'
+  });
+  const steps = [['起きて顔を洗う', 180], ['着替え', 300], ['朝ごはん', 900], ['歯みがき', 180], ['持ち物チェック', 120]];
+  let n = num_(nextId_(SHEET_STEP, 'S').slice(1));
+  appendRows_(SHEET_STEP, HEAD_STEP, steps.map(function (s, i) {
+    return { '動作ID': 'S' + ('00000' + (n + i)).slice(-5), '家庭ID': familyId, 'ルーチンID': routineId,
+             '動作名': s[0], '目標秒': s[1], '表示順': i + 1, '有効': 'TRUE' };
+  }));
+  const rewards = [['ゲーム時間', 1, '分'], ['おこづかい', 10, '円']];
+  n = num_(nextId_(SHEET_REWARD, 'W').slice(1));
+  appendRows_(SHEET_REWARD, HEAD_REWARD, rewards.map(function (r, i) {
+    return { '交換先ID': 'W' + ('00000' + (n + i)).slice(-5), '家庭ID': familyId, '交換先名': r[0],
+             '1分あたり': r[1], '単位': r[2], '表示順': i + 1, '有効': 'TRUE' };
+  }));
+}
+
+/** args = {familyName, password} */
+function loginFamily(args) {
+  return guarded_('loginFamily', function (setFamily) {
+    const family = findFamilyByName_(args && args.familyName);
+    if (!family || hashSecret_(String(args.password || ''), family['ソルト']) !== family['パスワードハッシュ']) {
+      throw new Error('家庭名またはパスワードが違います');
+    }
+    setFamily(family['家庭ID']);
+    return { token: createSession_(family['家庭ID']), familyName: family['家庭名'] };
+  });
+}
+
+/** args = {token} */
+function logoutFamily(args) {
+  return guarded_('logoutFamily', function () {
+    const row = readSheet_(SHEET_SESSION).filter(function (r) { return r['トークン'] === (args && args.token); })[0];
+    if (row) updateRow_(SHEET_SESSION, HEAD_SESSION, row._row, { '状態': ST_SESSION_INACTIVE });
+    return { ok: true };
+  });
+}
+
+/** 親メンバーとPINを確認して、そのメンバー行を返す。違えば例外 */
+function requireParentPin_(familyId, actorId, pin) {
+  const actor = readFamily_(SHEET_MEMBER, familyId).filter(function (r) { return r['メンバーID'] === actorId; })[0];
+  if (!actor || actor['役割'] !== ROLE_PARENT || !isTrue_(actor['有効'])) throw new Error('この操作は親だけができます');
+  if (!actor['PINハッシュ'] || hashSecret_(String(pin || ''), actor['PINソルト']) !== actor['PINハッシュ']) {
+    throw new Error('PINが違います');
+  }
+  return actor;
+}
+
+/** 画面で「親モード」に入るときのPIN確認。args = {token, actorId, pin} */
+function verifyParentPin(args) {
+  return guarded_('verifyParentPin', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    requireParentPin_(sess.familyId, args.actorId, args.pin);
+    return { ok: true };
+  });
+}
+
+/** args = {token, actorId, pin, currentPassword, newPassword} */
+function changeFamilyPassword(args) {
+  return guarded_('changeFamilyPassword', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    requireParentPin_(sess.familyId, args.actorId, args.pin);
+    const newPassword = String(args.newPassword || '');
+    if (newPassword.length < 4) throw new Error('新しいパスワードは4文字以上にしてください');
+    const family = readSheet_(SHEET_FAMILY).filter(function (r) { return r['家庭ID'] === sess.familyId; })[0];
+    if (hashSecret_(String(args.currentPassword || ''), family['ソルト']) !== family['パスワードハッシュ']) {
+      throw new Error('今のパスワードが違います');
+    }
+    return withLock_(function () {
+      const salt = Utilities.getUuid();
+      updateRow_(SHEET_FAMILY, HEAD_FAMILY, family._row, { 'パスワードハッシュ': hashSecret_(newPassword, salt), 'ソルト': salt });
+      return { message: 'パスワードを変更しました' };
+    });
+  });
+}
+
+
+/* ============================================================
+ *  5. 読み取り（起動時のまとめデータ・残高）
+ * ========================================================== */
+
+function getMembers_(familyId) {
+  return readFamily_(SHEET_MEMBER, familyId)
+    .filter(function (r) { return r['メンバーID']; })
+    .map(function (r) {
+      return { id: r['メンバーID'], name: r['名前'], role: r['役割'], order: num_(r['表示順']),
+               active: isTrue_(r['有効']), hasPin: !!r['PINハッシュ'] };
+    })
+    .sort(function (a, b) { return a.order - b.order; });
+}
+
+function getRoutines_(familyId) {
+  const steps = readFamily_(SHEET_STEP, familyId).filter(function (r) { return isTrue_(r['有効']); });
+  return readFamily_(SHEET_ROUTINE, familyId)
+    .filter(function (r) { return r['ルーチンID']; })
+    .map(function (r) {
+      return {
+        id: r['ルーチンID'], name: r['ルーチン名'], memberId: r['対象メンバーID'], createdBy: r['作成者ID'] || '',
+        order: num_(r['表示順']), active: isTrue_(r['有効']),
+        steps: steps.filter(function (s) { return s['ルーチンID'] === r['ルーチンID']; })
+          .map(function (s) { return { id: s['動作ID'], name: s['動作名'], targetSec: num_(s['目標秒']), order: num_(s['表示順']) }; })
+          .sort(function (a, b) { return a.order - b.order; })
+      };
+    })
+    .sort(function (a, b) { return a.order - b.order; });
+}
+
+function getRewards_(familyId) {
+  return readFamily_(SHEET_REWARD, familyId)
+    .filter(function (r) { return r['交換先ID']; })
+    .map(function (r) {
+      return { id: r['交換先ID'], name: r['交換先名'], perMin: num_(r['1分あたり']), unit: r['単位'],
+               order: num_(r['表示順']), active: isTrue_(r['有効']) };
+    })
+    .sort(function (a, b) { return a.order - b.order; });
+}
+
+/** 交換で貯金を使っている扱いの状態か（承認待ちは「予約」として先に引いておく） */
+function exchangeHolds_(status) {
+  return status === EX_PENDING || status === EX_APPROVED;
+}
+
+/** メンバーごとの {balanceSec, weekSec, monthSec, pendingSec} */
+function getBalances_(familyId) {
+  const today = todayStr_();
+  const weekStart = weekStartStr_(today);
+  const monthStart = today.slice(0, 8) + '01';
+  const out = {};
+  function slot(id) {
+    return out[id] || (out[id] = { balanceSec: 0, weekSec: 0, monthSec: 0, pendingSec: 0 });
+  }
+  readFamily_(SHEET_RUNLOG, familyId).forEach(function (r) {
+    if (r['状態'] !== ST_ACTIVE) return;
+    const b = slot(r['メンバーID']);
+    const sec = num_(r['貯金秒']);
+    b.balanceSec += sec;
+    if (r['実行日'] >= weekStart) b.weekSec += sec;
+    if (r['実行日'] >= monthStart) b.monthSec += sec;
+  });
+  readFamily_(SHEET_EXCHANGE, familyId).forEach(function (r) {
+    if (!exchangeHolds_(r['状態'])) return;
+    const b = slot(r['メンバーID']);
+    b.balanceSec -= num_(r['使う秒']);
+    if (r['状態'] === EX_PENDING) b.pendingSec += num_(r['使う秒']);
+  });
+  return out;
+}
+
+function balanceOf_(familyId, memberId) {
+  const b = getBalances_(familyId)[memberId];
+  return b ? b.balanceSec : 0;
+}
+
+/** 起動時にまとめて渡すデータ。args = token */
+function getBootstrap(token) {
+  return guarded_('getBootstrap', function (setFamily) {
+    const sess = session_(token, setFamily);
+    const pendingCount = readFamily_(SHEET_EXCHANGE, sess.familyId)
+      .filter(function (r) { return r['状態'] === EX_PENDING; }).length;
+    return {
+      familyName: sess.familyName,
+      members: getMembers_(sess.familyId),
+      routines: getRoutines_(sess.familyId),
+      rewards: getRewards_(sess.familyId),
+      balances: getBalances_(sess.familyId),
+      pendingCount: pendingCount,
+      today: todayStr_()
+    };
+  });
+}
+
+
+/* ============================================================
+ *  6. ルーチンの実行結果を保存する
+ * ========================================================== */
+
+/**
+ * ルーチン1回分の結果をまとめて保存する。
+ * 圏外のときは端末に保留して後から送り直すので、同じ実行IDが2回来ても二重に記録しない。
+ * args = {token, runId, memberId, routineId, date, results:[{stepId, targetSec, actualSec, reason, showRemaining}]}
+ */
+function saveRun(args) {
+  return guarded_('saveRun', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    const runId = String(args.runId || '');
+    if (!runId) throw new Error('実行IDがありません');
+    const member = getMembers_(sess.familyId).filter(function (m) { return m.id === args.memberId; })[0];
+    if (!member) throw new Error('メンバーが見つかりません');
+    const routine = getRoutines_(sess.familyId).filter(function (r) { return r.id === args.routineId; })[0];
+    if (!routine) throw new Error('ルーチンが見つかりません');
+    const results = Array.isArray(args.results) ? args.results : [];
+    if (!results.length) throw new Error('記録する動作がありません');
+
+    // 動作名は保存時点のマスタから取る（削除済みの動作でも名前が残るよう、全行から探す）
+    const stepNames = {};
+    readFamily_(SHEET_STEP, sess.familyId).forEach(function (s) { stepNames[s['動作ID']] = s['動作名']; });
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(args.date || '')) ? args.date : todayStr_();
+
+    return withLock_(function () {
+      const dup = readFamily_(SHEET_RUNLOG, sess.familyId).some(function (r) { return r['実行ID'] === runId; });
+      if (!dup) {
+        let n = num_(nextId_(SHEET_RUNLOG, 'L').slice(1));
+        const now = nowStr_();
+        appendRows_(SHEET_RUNLOG, HEAD_RUNLOG, results.map(function (x, i) {
+          const target = Math.max(0, Math.round(num_(x.targetSec)));
+          const actual = Math.max(0, Math.round(num_(x.actualSec)));
+          return {
+            '記録ID': 'L' + ('00000' + (n + i)).slice(-5), '家庭ID': sess.familyId, '実行ID': runId,
+            '記録日時': now, '実行日': date, 'メンバーID': member.id, 'メンバー名': member.name,
+            'ルーチンID': routine.id, 'ルーチン名': routine.name,
+            '動作ID': x.stepId, '動作名': stepNames[x.stepId] || String(x.name || ''),
+            '目標秒': target, '実績秒': actual, '貯金秒': target - actual,
+            'オーバー理由': String(x.reason || '').slice(0, 200),
+            '残り時間表示': x.showRemaining ? '表示' : '非表示',
+            '状態': ST_ACTIVE, '取消理由': ''
+          };
+        }));
+      }
+      return { duplicated: dup, balances: getBalances_(sess.familyId) };
+    });
+  });
+}
+
+/**
+ * 怪しい記録を無効にする（親のみ）。行は消さず【状態】を取消済にする。
+ * logId があればその動作1つだけ、なければその回（実行ID）をまるごと。
+ * args = {token, actorId, pin, runId, logId?, reason}
+ */
+function cancelRun(args) {
+  return guarded_('cancelRun', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    requireParentPin_(sess.familyId, args.actorId, args.pin);
+    return withLock_(function () {
+      const rows = readFamily_(SHEET_RUNLOG, sess.familyId)
+        .filter(function (r) {
+          return r['実行ID'] === args.runId && r['状態'] === ST_ACTIVE && (!args.logId || r['記録ID'] === args.logId);
+        });
+      if (!rows.length) throw new Error('取り消せる記録が見つかりません');
+      rows.forEach(function (r) {
+        updateRow_(SHEET_RUNLOG, HEAD_RUNLOG, r._row, { '状態': ST_CANCELED, '取消理由': String(args.reason || '') });
+      });
+      return { message: args.logId ? 'その動作の記録を無効にしました' : 'この回の記録を無効にしました' };
+    });
+  });
+}
+
+
+/* ============================================================
+ *  7. 交換（申請 → 親が承認）
+ * ========================================================== */
+
+/** args = {token, memberId, rewardId, minutes, memo} */
+function requestExchange(args) {
+  return guarded_('requestExchange', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    const member = getMembers_(sess.familyId).filter(function (m) { return m.id === args.memberId; })[0];
+    if (!member) throw new Error('メンバーが見つかりません');
+    const reward = getRewards_(sess.familyId).filter(function (w) { return w.id === args.rewardId && w.active; })[0];
+    if (!reward) throw new Error('交換先が見つかりません');
+    const minutes = Math.floor(num_(args.minutes));
+    if (minutes < 1) throw new Error('1分以上で申請してください');
+
+    return withLock_(function () {
+      const balance = balanceOf_(sess.familyId, member.id);
+      if (minutes * 60 > balance) throw new Error('貯金が足りません（使えるのは' + Math.floor(Math.max(balance, 0) / 60) + '分まで）');
+      appendRow_(SHEET_EXCHANGE, HEAD_EXCHANGE, {
+        '申請ID': nextId_(SHEET_EXCHANGE, 'X'), '家庭ID': sess.familyId, '申請日時': nowStr_(),
+        'メンバーID': member.id, 'メンバー名': member.name, '交換先ID': reward.id, '交換先名': reward.name,
+        '使う秒': minutes * 60, '換算値': Math.round(minutes * reward.perMin * 100) / 100, '単位': reward.unit,
+        'メモ': String(args.memo || '').slice(0, 200), '状態': EX_PENDING
+      });
+      return { message: '申請しました。親の承認を待ってね', balances: getBalances_(sess.familyId) };
+    });
+  });
+}
+
+/** 自分の承認待ちを取り消す。args = {token, requestId} */
+function cancelExchange(args) {
+  return guarded_('cancelExchange', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    return withLock_(function () {
+      const row = readFamily_(SHEET_EXCHANGE, sess.familyId).filter(function (r) { return r['申請ID'] === args.requestId; })[0];
+      if (!row || row['状態'] !== EX_PENDING) throw new Error('取り消せる申請が見つかりません');
+      updateRow_(SHEET_EXCHANGE, HEAD_EXCHANGE, row._row, { '状態': EX_CANCELED, '処理日時': nowStr_() });
+      return { message: '申請を取り消しました', balances: getBalances_(sess.familyId) };
+    });
+  });
+}
+
+/** 親が承認・却下する。args = {token, actorId, pin, requestId, approve, reason} */
+function decideExchange(args) {
+  return guarded_('decideExchange', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    const actor = requireParentPin_(sess.familyId, args.actorId, args.pin);
+    return withLock_(function () {
+      const row = readFamily_(SHEET_EXCHANGE, sess.familyId).filter(function (r) { return r['申請ID'] === args.requestId; })[0];
+      if (!row || row['状態'] !== EX_PENDING) throw new Error('この申請はもう処理されています');
+      updateRow_(SHEET_EXCHANGE, HEAD_EXCHANGE, row._row, {
+        '状態': args.approve ? EX_APPROVED : EX_REJECTED, '処理日時': nowStr_(),
+        '処理者ID': actor['メンバーID'], '処理者名': actor['名前'],
+        '却下理由': args.approve ? '' : String(args.reason || '')
+      });
+      return { message: args.approve ? '承認しました' : '却下しました（貯金は戻ります）', balances: getBalances_(sess.familyId) };
+    });
+  });
+}
+
+/** 交換申請の一覧（新しい順）。args = {token, memberId?, limit?} */
+function getExchanges(args) {
+  return guarded_('getExchanges', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    return readFamily_(SHEET_EXCHANGE, sess.familyId)
+      .filter(function (r) { return !args.memberId || r['メンバーID'] === args.memberId; })
+      .reverse()
+      .slice(0, num_(args.limit) || 50)
+      .map(function (r) {
+        return { id: r['申請ID'], at: r['申請日時'], memberId: r['メンバーID'], memberName: r['メンバー名'],
+                 rewardName: r['交換先名'], sec: num_(r['使う秒']), value: num_(r['換算値']), unit: r['単位'],
+                 memo: r['メモ'], status: r['状態'], decidedAt: r['処理日時'], decidedBy: r['処理者名'],
+                 rejectReason: r['却下理由'] };
+      });
+  });
+}
+
+
+/* ============================================================
+ *  8. 履歴・分析
+ * ========================================================== */
+
+function runRows_(familyId, memberId, days, includeCanceled) {
+  const from = addDaysStr_(todayStr_(), -(Math.max(1, num_(days) || 7) - 1));
+  return readFamily_(SHEET_RUNLOG, familyId).filter(function (r) {
+    return (r['状態'] === ST_ACTIVE || (includeCanceled && r['状態'] === ST_CANCELED)) &&
+      r['実行日'] >= from && (!memberId || r['メンバーID'] === memberId);
+  });
+}
+
+/** 実行ごとにまとめた履歴（新しい順）。無効にした記録も「取消済」として含める。args = {token, memberId, days} */
+function getHistory(args) {
+  return guarded_('getHistory', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    const runs = {};
+    const order = [];
+    runRows_(sess.familyId, args.memberId, args.days || 30, true).forEach(function (r) {
+      let run = runs[r['実行ID']];
+      if (!run) {
+        run = runs[r['実行ID']] = { runId: r['実行ID'], date: r['実行日'], at: r['記録日時'],
+                                    memberName: r['メンバー名'], routineName: r['ルーチン名'], savedSec: 0,
+                                    activeCount: 0, steps: [] };
+        order.push(run);
+      }
+      const canceled = r['状態'] === ST_CANCELED;
+      if (!canceled) { run.savedSec += num_(r['貯金秒']); run.activeCount++; }
+      run.steps.push({ logId: r['記録ID'], name: r['動作名'], targetSec: num_(r['目標秒']), actualSec: num_(r['実績秒']),
+                       savedSec: num_(r['貯金秒']), reason: r['オーバー理由'], hidden: r['残り時間表示'] === '非表示',
+                       canceled: canceled, cancelReason: r['取消理由'] });
+    });
+    return order.reverse().slice(0, 60);
+  });
+}
+
+/**
+ * オーバーの分析。args = {token, memberId, days}
+ * 動作ごと：回数・オーバー回数・平均の差・合計貯金
+ * 理由ごと：回数（理由は「えらんだ理由：自由記入」の形で保存しているので、「：」の前で集計）
+ */
+function getAnalysis(args) {
+  return guarded_('getAnalysis', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    const rows = runRows_(sess.familyId, args.memberId, args.days || 30);
+    const byStep = {};
+    const byReason = {};
+    const overs = [];
+    let hiddenCount = 0, hiddenSaved = 0, shownCount = 0, shownSaved = 0;
+    rows.forEach(function (r) {
+      const key = r['ルーチン名'] + '｜' + r['動作名'];
+      const s = byStep[key] || (byStep[key] = { routineName: r['ルーチン名'], name: r['動作名'], count: 0, overCount: 0, totalSaved: 0, totalActual: 0, targetSec: num_(r['目標秒']) });
+      const saved = num_(r['貯金秒']);
+      s.count++;
+      s.totalSaved += saved;
+      s.totalActual += num_(r['実績秒']);
+      if (saved < 0) {
+        s.overCount++;
+        const label = String(r['オーバー理由'] || '').split('：')[0] || '（理由なし）';
+        byReason[label] = (byReason[label] || 0) + 1;
+        overs.push({ date: r['実行日'], routineName: r['ルーチン名'], name: r['動作名'], overSec: -saved, reason: r['オーバー理由'] });
+      }
+      if (r['残り時間表示'] === '非表示') { hiddenCount++; hiddenSaved += saved; } else { shownCount++; shownSaved += saved; }
+    });
+    const steps = Object.keys(byStep).map(function (k) {
+      const s = byStep[k];
+      s.avgActual = Math.round(s.totalActual / s.count);
+      s.overRate = s.overCount / s.count;
+      return s;
+    }).sort(function (a, b) { return b.overRate - a.overRate || a.totalSaved - b.totalSaved; });
+    const reasons = Object.keys(byReason).map(function (k) { return { label: k, count: byReason[k] }; })
+      .sort(function (a, b) { return b.count - a.count; });
+    return {
+      steps: steps, reasons: reasons, overs: overs.reverse().slice(0, 30),
+      mode: {
+        shown: { count: shownCount, avgSaved: shownCount ? Math.round(shownSaved / shownCount) : 0 },
+        hidden: { count: hiddenCount, avgSaved: hiddenCount ? Math.round(hiddenSaved / hiddenCount) : 0 }
+      }
+    };
+  });
+}
+
+
+/* ============================================================
+ *  9. 設定（親のみ・PIN必須）
+ * ========================================================== */
+
+/**
+ * メンバーの追加・変更。memberId が空なら追加。
+ * args = {token, actorId, pin, memberId, name, role, order, active, newPin}
+ */
+function saveMember(args) {
+  return guarded_('saveMember', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    requireParentPin_(sess.familyId, args.actorId, args.pin);
+    const name = String(args.name || '').trim();
+    if (!name) throw new Error('名前を入力してください');
+    const role = args.role === ROLE_PARENT ? ROLE_PARENT : ROLE_CHILD;
+    if (args.newPin) checkPinFormat_(args.newPin);
+
+    return withLock_(function () {
+      const values = { '名前': name, '役割': role, '表示順': num_(args.order) || 1, '有効': args.active === false ? 'FALSE' : 'TRUE' };
+      if (args.newPin) {
+        const salt = Utilities.getUuid();
+        values['PINハッシュ'] = hashSecret_(args.newPin, salt);
+        values['PINソルト'] = salt;
+      }
+      if (args.memberId) {
+        const row = readFamily_(SHEET_MEMBER, sess.familyId).filter(function (r) { return r['メンバーID'] === args.memberId; })[0];
+        if (!row) throw new Error('メンバーが見つかりません');
+        if (role === ROLE_PARENT && !row['PINハッシュ'] && !args.newPin) throw new Error('親にするときはPINを決めてください');
+        updateRow_(SHEET_MEMBER, HEAD_MEMBER, row._row, values);
+      } else {
+        if (role === ROLE_PARENT && !args.newPin) throw new Error('親を追加するときはPINを決めてください');
+        values['メンバーID'] = nextId_(SHEET_MEMBER, 'M');
+        values['家庭ID'] = sess.familyId;
+        appendRow_(SHEET_MEMBER, HEAD_MEMBER, values);
+      }
+      const parents = getMembers_(sess.familyId).filter(function (m) { return m.role === ROLE_PARENT && m.active; });
+      if (!parents.length) throw new Error('親が1人もいなくなります。先に別の親を追加してください');
+      return { message: '保存しました' };
+    });
+  });
+}
+
+/**
+ * ルーチンと動作をまとめて保存する。routineId が空なら追加。
+ * 追加と「自分が作ったルーチン」の編集は、だれでもPINなしでできる。
+ * ほかの人が作ったルーチンの編集は親だけ（PIN必須）。子どもが作ったルーチンは、その子専用（対象メンバー＝自分）になる。
+ * 一覧から消した動作は行を消さず【有効】をFALSEにする（過去の記録の名前を残すため）。
+ * args = {token, actorId, pin, routineId, name, memberId, order, active, steps:[{id?, name, targetSec}]}
+ */
+function saveRoutine(args) {
+  return guarded_('saveRoutine', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    const actor = getMembers_(sess.familyId).filter(function (m) { return m.id === args.actorId && m.active; })[0];
+    if (!actor) throw new Error('あなたのメンバー情報が見つかりません');
+    const isParent = actor.role === ROLE_PARENT;
+    const name = String(args.name || '').trim();
+    if (!name) throw new Error('ルーチン名を入力してください');
+    const steps = (Array.isArray(args.steps) ? args.steps : []).map(function (s) {
+      return { id: s.id || '', name: String(s.name || '').trim(), targetSec: Math.round(num_(s.targetSec)) };
+    });
+    if (!steps.length) throw new Error('動作を1つ以上入れてください');
+    steps.forEach(function (s) {
+      if (!s.name) throw new Error('名前が空の動作があります');
+      if (s.targetSec < 5) throw new Error('「' + s.name + '」の目標時間が短すぎます');
+    });
+
+    return withLock_(function () {
+      const values = { 'ルーチン名': name, '対象メンバーID': isParent ? (args.memberId || '') : actor.id,
+                       '表示順': num_(args.order) || 1, '有効': args.active === false ? 'FALSE' : 'TRUE' };
+      let routineId = args.routineId;
+      if (routineId) {
+        const row = readFamily_(SHEET_ROUTINE, sess.familyId).filter(function (r) { return r['ルーチンID'] === routineId; })[0];
+        if (!row) throw new Error('ルーチンが見つかりません');
+        if (row['作成者ID'] !== actor.id) {
+          if (!isParent) throw new Error('自分で作ったルーチンだけ編集できます');
+          requireParentPin_(sess.familyId, actor.id, args.pin);
+        }
+        updateRow_(SHEET_ROUTINE, HEAD_ROUTINE, row._row, values);
+      } else {
+        routineId = values['ルーチンID'] = nextId_(SHEET_ROUTINE, 'R');
+        values['家庭ID'] = sess.familyId;
+        values['作成者ID'] = actor.id;
+        appendRow_(SHEET_ROUTINE, HEAD_ROUTINE, values);
+      }
+
+      const existing = readFamily_(SHEET_STEP, sess.familyId).filter(function (r) { return r['ルーチンID'] === routineId; });
+      const keep = {};
+      const added = [];
+      let n = num_(nextId_(SHEET_STEP, 'S').slice(1));
+      steps.forEach(function (s, i) {
+        const row = s.id && existing.filter(function (r) { return r['動作ID'] === s.id; })[0];
+        if (row) {
+          keep[s.id] = true;
+          updateRow_(SHEET_STEP, HEAD_STEP, row._row, { '動作名': s.name, '目標秒': s.targetSec, '表示順': i + 1, '有効': 'TRUE' });
+        } else {
+          added.push({ '動作ID': 'S' + ('00000' + (n++)).slice(-5), '家庭ID': sess.familyId, 'ルーチンID': routineId,
+                       '動作名': s.name, '目標秒': s.targetSec, '表示順': i + 1, '有効': 'TRUE' });
+        }
+      });
+      existing.forEach(function (r) {
+        if (!keep[r['動作ID']] && isTrue_(r['有効'])) updateRow_(SHEET_STEP, HEAD_STEP, r._row, { '有効': 'FALSE' });
+      });
+      appendRows_(SHEET_STEP, HEAD_STEP, added);
+      return { message: '保存しました' };
+    });
+  });
+}
+
+/** 交換先の追加・変更。args = {token, actorId, pin, rewardId, name, perMin, unit, order, active} */
+function saveReward(args) {
+  return guarded_('saveReward', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    requireParentPin_(sess.familyId, args.actorId, args.pin);
+    const name = String(args.name || '').trim();
+    if (!name) throw new Error('交換先の名前を入力してください');
+    const perMin = num_(args.perMin);
+    if (perMin <= 0) throw new Error('「1分あたり」は0より大きい数にしてください');
+
+    return withLock_(function () {
+      const values = { '交換先名': name, '1分あたり': perMin, '単位': String(args.unit || '').trim(),
+                       '表示順': num_(args.order) || 1, '有効': args.active === false ? 'FALSE' : 'TRUE' };
+      if (args.rewardId) {
+        const row = readFamily_(SHEET_REWARD, sess.familyId).filter(function (r) { return r['交換先ID'] === args.rewardId; })[0];
+        if (!row) throw new Error('交換先が見つかりません');
+        updateRow_(SHEET_REWARD, HEAD_REWARD, row._row, values);
+      } else {
+        values['交換先ID'] = nextId_(SHEET_REWARD, 'W');
+        values['家庭ID'] = sess.familyId;
+        appendRow_(SHEET_REWARD, HEAD_REWARD, values);
+      }
+      return { message: '保存しました' };
+    });
+  });
+}
+
+return API_FUNCTIONS;
+})(LocalStore.gas.SpreadsheetApp, LocalStore.gas.PropertiesService, LocalStore.gas.LockService, LocalStore.gas.Utilities);
+</script>
+<script>
+/* ============================================================
+   Routine Bank  ―  画面の動き
+   ============================================================ */
+
+/* インストール版（PWA）のときは build-pwa.js がここにGASのURLを入れる。
+   GASのWebアプリとして開いたときは空のまま → google.script.run を使う */
+const API_URL = '';
+
+/* Routine Bank Home（build-pwa.js --home）では、サーバーの処理（Code.gs）をこのページの中で動かす。
+   そのとき LOCAL_API が用意される。データはこのスマホの中だけに保存（ログイン・ネット不要） */
+const IS_LOCAL = typeof LOCAL_API !== 'undefined';
+
+/** サーバーの関数を呼ぶ（await で使える） */
+function gs(fnName){
+  const args = Array.prototype.slice.call(arguments, 1);
+  if (IS_LOCAL) return gsLocal_(fnName, args);
+  if (API_URL) return gsFetch_(fnName, args);
+  return new Promise(function(resolve, reject){
+    google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fnName].apply(null, args);
+  });
+}
+
+/* Home版：スマホの中の Code.gs を呼ぶ。成功したら保存、失敗したら途中の書き込みを取り消す。
+   JSONを通すのは、GASとの受け渡しと同じく「データだけ」をやりとりするため */
+function gsLocal_(fnName, args){
+  return new Promise(function(resolve, reject){
+    setTimeout(function(){
+      try{
+        if (!Object.prototype.hasOwnProperty.call(LOCAL_API, fnName)) throw new Error('不明な操作です: ' + fnName);
+        const result = LOCAL_API[fnName].apply(null, JSON.parse(JSON.stringify(args)));
+        LocalStore.flush();
+        resolve(result === undefined ? null : JSON.parse(JSON.stringify(result)));
+      }catch(err){
+        LocalStore.rollback();
+        reject(err);
+      }
+    }, 0);
+  });
+}
+
+/* PWA版：GASの doPost に fetch で送る。
+   Content-Type を text/plain にするのは、ブラウザの事前確認（CORSプリフライト）を起こさないため */
+async function gsFetch_(fnName, args){
+  let res;
+  try{
+    res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ fn: fnName, args: args })
+    });
+  }catch(e){
+    const err = new Error('インターネットにつながっていません');
+    err.network = true;
+    throw err;
+  }
+  let data;
+  try{ data = await res.json(); }
+  catch(e){ throw new Error('サーバーの応答が読めませんでした（' + res.status + '）'); }
+  if (!data.ok) throw new Error(data.error);
+  return data.result;
+}
+
+/* ── 端末に覚えておくもの（localStorage）──────────
+   rt_token  ログイン中のトークン
+   rt_me_<家庭名>  この端末で使う人
+   rt_show   残り時間を表示するか
+   rt_run    実行中のルーチン（アプリを閉じても続きから再開するため）
+   rt_outbox 送信待ちの実行結果（圏外のとき用） */
+function load_(key, def){
+  try{ const v = localStorage.getItem(key); return v == null ? def : JSON.parse(v); }catch(e){ return def; }
+}
+function save_(key, val){
+  try{ if (val == null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(val)); }catch(e){}
+}
+
+const S = {
+  token: '', familyName: '',
+  members: [], routines: [], rewards: [], balances: {}, pendingCount: 0, today: '',
+  me: '',               // この端末の人（メンバーID）
+  view: 'timer',
+  bankMember: '',       // 貯金タブで見ている人
+  anMember: '', anDays: 7,
+  parentPin: '',        // 親のPIN（確認済みのものをこの画面を開いている間だけ覚える）
+  pinFor: ''            // そのPINがどの親のものか
+};
+
+const VIEWS = [
+  { key:'timer',    label:'タイマー', ico:'⏱' },
+  { key:'bank',     label:'貯金',     ico:'💰' },
+  { key:'analysis', label:'分析',     ico:'📊' },
+  { key:'settings', label:'設定',     ico:'⚙️' }
+];
+
+const REASONS = ['ぼーっとしてた', 'スマホ・テレビ', '話しかけられた', '思ったより大変', '探し物', '眠かった'];
+
+
+/* ============================================================
+   1. 起動・ログイン
+   ============================================================ */
+
+window.addEventListener('load', boot);
+window.addEventListener('online', function(){ flushOutbox(); });
+
+async function boot(){
+  // Home版：ブラウザが勝手にデータを消さないようにお願いしておく（対応している機種だけ）
+  if (IS_LOCAL){ try{ if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){} }
+  S.token = load_('rt_token', '');
+  if (S.token){
+    try{
+      await loadBootstrap();
+      afterLogin();
+      return;
+    }catch(err){
+      if (err.network){
+        // 圏外：ログアウトせず、実行中のルーチンがあれば続けられるようにする
+        if (load_('rt_run', null)){ show('loading', false); resumeRun(); return; }
+        document.querySelector('#loading .gate-box').innerHTML =
+          '<p>' + esc(err.message) + '</p><button class="btn primary block" onclick="location.reload()">もう一度読み込む</button>';
+        return;
+      }
+      save_('rt_token', null);
+      S.token = '';
+    }
+  }
+  show('loading', false);
+  showAuthMode(IS_LOCAL ? 'register' : 'login');
+}
+
+function showAuthMode(mode){
+  show('authGate', true);
+  startLogoClock_();
+  show('authLogin', mode === 'login');
+  show('authRegister', mode === 'register');
+  if (IS_LOCAL){
+    // Home版：家庭のパスワードはいらない（このスマホの中だけで使うため）
+    show('rg_pwLabel', false);
+    show('rg_back', false);
+    document.getElementById('rg_intro').textContent =
+      'このスマホ1台を家族で使います。登録もインターネットもいりません。PINは親だけが知っている4けたの数字で、交換の承認や設定の変更に使います。';
+    document.getElementById('rg_submit').textContent = 'はじめる';
+  }
+}
+
+async function doLogin(){
+  const errEl = document.getElementById('au_error');
+  errEl.textContent = '';
+  try{
+    const res = await gs('loginFamily', { familyName: val('au_family'), password: val('au_password') });
+    await onLoggedIn(res);
+  }catch(err){ errEl.textContent = errText(err); }
+}
+
+async function doRegister(){
+  const errEl = document.getElementById('rg_error');
+  errEl.textContent = '';
+  try{
+    const res = await gs('registerFamily', {
+      familyName: val('rg_family'), password: IS_LOCAL ? LocalStore.gas.Utilities.getUuid() : val('rg_password'),
+      parentName: val('rg_parent'), pin: val('rg_pin')
+    });
+    await onLoggedIn(res);
+  }catch(err){ errEl.textContent = errText(err); }
+}
+
+async function onLoggedIn(res){
+  S.token = res.token;
+  save_('rt_token', res.token);
+  show('authGate', false);
+  show('loading', true);
+  await loadBootstrap();
+  afterLogin();
+}
+
+async function loadBootstrap(){
+  const b = await gs('getBootstrap', S.token);
+  S.familyName = b.familyName;
+  S.members = b.members;
+  S.routines = b.routines;
+  S.rewards = b.rewards;
+  S.balances = b.balances;
+  S.pendingCount = b.pendingCount;
+  S.today = b.today;
+}
+
+function afterLogin(){
+  show('loading', false);
+  S.me = load_(meKey_(), '');
+  if (!member_(S.me)){ openWho(); return; }
+  // 親として開くときは毎回PINを確認する（子どもが親になりすませないように）
+  if (isParent_(S.me)){ openWho(); chooseMe(S.me); return; }
+  enterApp();
+}
+
+function meKey_(){ return 'rt_me_' + S.familyName; }
+
+function openWho(){
+  const list = activeMembers_();
+  document.getElementById('whoList').innerHTML = list.map(function(m){
+    return '<button class="who-btn" onclick="chooseMe(\'' + m.id + '\')">' + esc(m.name) +
+      (m.role === '親' ? ' <span class="muted">（親）</span>' : '') + '</button>';
+  }).join('') || '<p class="muted">メンバーがいません</p>';
+  show('whoGate', true);
+}
+
+async function chooseMe(id){
+  if (isParent_(id) && !(await askPin_(id))) return;   // PINをやめたら選ぶ画面のまま
+  if (S.pinFor !== id){ S.parentPin = ''; S.pinFor = ''; }  // 別の人に替えたら覚えたPINは忘れる
+  S.me = id;
+  save_(meKey_(), id);
+  S.bankMember = id;
+  S.anMember = id;
+  show('whoGate', false);
+  enterApp();
+}
+
+function enterApp(){
+  S.bankMember = S.bankMember || S.me;
+  S.anMember = S.anMember || S.me;
+  ['topbar', 'tabs', 'main', 'bottomnav'].forEach(function(id){ show(id, true); });
+  document.getElementById('meChip').textContent = '👤 ' + member_(S.me).name;
+  document.getElementById('showRemaining').checked = load_('rt_show', true);
+  renderNav();
+  switchView(S.view);
+  flushOutbox();
+  if (load_('rt_run', null)) resumeRun();
+}
+
+async function logout(){
+  try{ await gs('logoutFamily', { token: S.token }); }catch(err){}
+  save_('rt_token', null);
+  location.reload();
+}
+
+
+/* ============================================================
+   2. タブ
+   ============================================================ */
+
+function renderNav(){
+  const html = function(isBottom){
+    return VIEWS.map(function(v){
+      const dot = v.key === 'bank' && S.pendingCount ? '<span class="dot">' + S.pendingCount + '</span>' : '';
+      return '<button class="' + (S.view === v.key ? 'active' : '') + '" onclick="switchView(\'' + v.key + '\')">' +
+        (isBottom ? '<span class="ico">' + v.ico + '</span>' : v.ico + ' ') + v.label + dot + '</button>';
+    }).join('');
+  };
+  document.getElementById('tabs').innerHTML = html(false);
+  document.getElementById('bottomnav').innerHTML = html(true);
+}
+
+function switchView(key){
+  S.view = key;
+  VIEWS.forEach(function(v){ show('view-' + v.key, v.key === key); });
+  renderNav();
+  window.scrollTo(0, 0);
+  if (key === 'timer') renderTimerView();
+  if (key === 'bank') renderBank();
+  if (key === 'analysis') renderAnalysis();
+  if (key === 'settings') renderSettings();
+}
+
+async function refresh(){
+  await loadBootstrap();
+  renderNav();
+  switchView(S.view);
+}
+
+
+/* ============================================================
+   3. タイマータブ（ルーチンをえらぶ）
+   ============================================================ */
+
+function renderTimerView(){
+  const b = bal_(S.me);
+  document.getElementById('bankMini').innerHTML =
+    '<div><div class="label">' + esc(member_(S.me).name) + 'の時間貯金</div><div class="val">' + fmtDur(b.balanceSec) + '</div></div>' +
+    '<div class="side">今週 <b>' + fmtSigned(b.weekSec) + '</b><br>今月 <b>' + fmtSigned(b.monthSec) + '</b></div>';
+
+  const list = myRoutines_();
+  document.getElementById('routineList').innerHTML = list.map(function(r){
+    const total = r.steps.reduce(function(s, x){ return s + x.targetSec; }, 0);
+    return '<button class="routine" onclick="startRun(\'' + r.id + '\')">' +
+      '<span class="play">▶</span><span><div class="name">' + esc(r.name) + '</div>' +
+      '<div class="sub">' + r.steps.length + 'こ・目標 ' + fmtDur(total) + '</div></span></button>';
+  }).join('') || '<p class="empty">使えるルーチンがありません</p>';
+  document.getElementById('routineList').insertAdjacentHTML('beforeend',
+    '<button class="btn block" onclick="editRoutine(\'\')">＋ ルーチンを作る</button>');
+  renderOutbox();
+}
+
+function myRoutines_(){
+  return S.routines.filter(function(r){
+    return r.active && r.steps.length && (!r.memberId || r.memberId === S.me);
+  });
+}
+
+function setShowRemaining(on){ save_('rt_show', !!on); }
+
+
+/* ============================================================
+   4. ルーチン実行（ここが本体）
+   時間は「開始した時刻」から計算するので、画面を閉じても・スリープしてもずれない。
+   ============================================================ */
+
+let R = null;          // 実行中のルーチン（rt_run に保存）
+let tickTimer = null;
+let clockRaf = 0;
+let wakeLock = null;
+
+function startRun(routineId){
+  const r = S.routines.filter(function(x){ return x.id === routineId; })[0];
+  if (!r) return;
+  R = {
+    runId: uuid_(), memberId: S.me, memberName: member_(S.me).name,
+    routineId: r.id, routineName: r.name, date: localDate_(),
+    steps: r.steps.map(function(s){ return { id: s.id, name: s.name, targetSec: s.targetSec }; }),
+    idx: 0, stepStart: 0, pausedAt: null, pausedMs: 0, alerted: false,
+    showRemaining: load_('rt_show', true),
+    results: [], askingReason: false
+  };
+  startStep_();
+  openRunScreen_();
+}
+
+function resumeRun(){
+  R = load_('rt_run', null);
+  if (!R) return;
+  openRunScreen_();
+  if (R.askingReason) askReason_();
+}
+
+function openRunScreen_(){
+  show('runScreen', true);
+  show('runBody', true);
+  show('runDone', false);
+  document.getElementById('runTitle').textContent = R.routineName + '（' + R.memberName + '）';
+  requestWakeLock_();
+  buildClock_();
+  stopTimers_();
+  tickTimer = setInterval(renderRun_, 250);
+  clockLoop_();
+  renderRun_();
+}
+
+function stopTimers_(){
+  clearInterval(tickTimer);
+  cancelAnimationFrame(clockRaf);
+}
+
+function startStep_(){
+  R.stepStart = Date.now();
+  R.pausedAt = null;
+  R.pausedMs = 0;
+  R.alerted = false;
+  R.refillAt = Date.now();   // 時計の扇形が満タンに戻るアニメーション用
+  persistRun_();
+  const s = R.steps[R.idx];
+  speak((R.idx === 0 ? 'スタート。' : '次は、') + s.name + '。目標' + speakDur_(s.targetSec));
+}
+
+function persistRun_(){ save_('rt_run', R); }
+
+function elapsedMs_(){
+  return (R.pausedAt || Date.now()) - R.stepStart - R.pausedMs;
+}
+
+function renderRun_(){
+  if (!R || R.idx >= R.steps.length) return;
+  const s = R.steps[R.idx];
+  const elapsed = Math.floor(elapsedMs_() / 1000);
+  const remain = s.targetSec - elapsed;
+
+  document.getElementById('runCount').textContent = (R.idx + 1) + ' / ' + R.steps.length;
+  document.getElementById('runStep').textContent = s.name;
+  document.getElementById('runTarget').textContent = '目標 ' + fmtDur(s.targetSec);
+  document.getElementById('runBar').style.width = (R.idx / R.steps.length * 100) + '%';
+  document.getElementById('runEye').textContent = R.showRemaining ? '🙈 かくす' : '👁 見る';
+  document.getElementById('runPause').textContent = R.pausedAt ? '▶ 再開' : '⏸ 一時停止';
+
+  const saved = R.results.reduce(function(sum, x){ return sum + (x.targetSec - x.actualSec); }, 0);
+  document.getElementById('runSaved').innerHTML = R.results.length
+    ? 'ここまでの貯金 <span class="' + (saved < 0 ? 'minus' : 'plus') + '">' + fmtSigned(saved) + '</span>' : '';
+
+  document.getElementById('runUpcoming').innerHTML = R.steps.map(function(x, i){
+    if (i === R.idx) return '';
+    const res = R.results.filter(function(r){ return r.stepId === x.id && r.idx === i; })[0];
+    const right = res ? '<span class="' + (res.targetSec - res.actualSec < 0 ? 'minus' : 'plus') + '">' + fmtSigned(res.targetSec - res.actualSec) + '</span>'
+                      : (i < R.idx ? 'とばした' : fmtDur(x.targetSec));
+    return '<div class="row' + (i < R.idx ? ' done' : '') + '"><span>' + (i < R.idx ? '✓ ' : '') + esc(x.name) + '</span><span>' + right + '</span></div>';
+  }).join('');
+
+  // 時間ぴったりのお知らせ（残り時間を表示しているときだけ）
+  if (R.showRemaining && !R.alerted && !R.pausedAt && remain <= 0){
+    R.alerted = true;
+    persistRun_();
+    speak('時間です');
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+  }
+}
+
+/* ── 動く時計 ─────────────────────────
+   文字盤の上の扇形＝残り時間（減っていく）。オーバーしたら赤い扇形が伸びる。
+   「かくす」モードでは扇形と数字を出さず、針だけ時間と関係ない速さで回す。 */
+const CK_R = 86;   // 扇形の半径
+
+function buildClock_(){
+  let ticks = '';
+  for (let i = 0; i < 60; i++){
+    const major = i % 5 === 0;
+    ticks += '<line x1="0" y1="-100" x2="0" y2="' + (major ? -89 : -95) + '" transform="rotate(' + (i * 6) + ')" class="ck-tick' + (major ? ' major' : '') + '"/>';
+  }
+  document.getElementById('runClock').innerHTML =
+    '<svg viewBox="-110 -110 220 220" aria-hidden="true">' +
+      '<circle r="104" class="ck-face"/>' + ticks +
+      '<path id="ckSector" class="ck-sector"/>' +
+      '<line id="ckEdge" x1="0" y1="0" x2="0" y2="-' + CK_R + '" class="ck-edge"/>' +
+      '<g id="ckSecHand"><line x1="0" y1="0" x2="0" y2="-97" class="ck-sec"/><circle cy="-97" r="4" class="ck-pin"/></g>' +
+      '<circle r="47" class="ck-hole"/>' +
+      '<text id="ckText" y="6" class="ck-text"></text>' +
+      '<text id="ckSub" y="26" class="ck-sub"></text>' +
+    '</svg>';
+}
+
+function clockLoop_(){
+  drawClock_();
+  clockRaf = requestAnimationFrame(clockLoop_);
+}
+
+function drawClock_(){
+  if (!R || R.idx >= R.steps.length) return;
+  const s = R.steps[R.idx];
+  const now = R.pausedAt || Date.now();
+  const elapsed = elapsedMs_() / 1000;
+  const remain = s.targetSec - elapsed;
+  const over = remain < 0;
+  const shown = R.showRemaining;
+
+  let frac = over ? Math.min(1, -remain / s.targetSec) : remain / s.targetSec;
+  const t = (Date.now() - (R.refillAt || 0)) / 700;
+  if (!over && t < 1) frac *= 1 - Math.pow(1 - t, 3);   // 満タンに戻るアニメーション
+
+  const sector = document.getElementById('ckSector');
+  sector.setAttribute('d', shown ? sectorPath_(frac, CK_R) : '');
+  sector.setAttribute('class', 'ck-sector' + (over ? ' over' : ''));
+  const edge = document.getElementById('ckEdge');
+  edge.style.display = shown ? '' : 'none';
+  edge.setAttribute('transform', 'rotate(' + (frac * 360) + ')');
+
+  // 秒針：表示モードは本当の秒、かくすモードは7.3秒で1周（時間の手がかりにならない速さ）
+  const secAngle = shown ? (elapsed % 60) * 6 : (now / 7300 * 360) % 360;
+  document.getElementById('ckSecHand').setAttribute('transform', 'rotate(' + secAngle + ')');
+
+  const text = document.getElementById('ckText');
+  const sub = document.getElementById('ckSub');
+  if (shown){
+    const sec = over ? Math.floor(-remain) : Math.ceil(remain);
+    text.textContent = (over ? '+' : '') + fmtClock(sec);
+    sub.textContent = R.pausedAt ? '一時停止中' : (over ? 'オーバー' : 'のこり');
+  }else{
+    text.textContent = '?';
+    sub.textContent = R.pausedAt ? '一時停止中' : 'かくし中';
+  }
+  text.setAttribute('class', 'ck-text' + (over && shown ? ' over' : '') + (text.textContent.length > 5 ? ' long' : ''));
+  document.getElementById('runClock').classList.toggle('paused', !!R.pausedAt);
+}
+
+/* ── ログイン画面の時計 ─────────────────
+   針は今の時刻。後ろの扇形は「減っては満タンに戻る」をくり返して、アプリの中身を見せる */
+let logoRaf = 0;
+
+function startLogoClock_(){
+  const box = document.getElementById('logoClock');
+  if (!box.firstChild){
+    let ticks = '';
+    for (let i = 0; i < 12; i++){
+      ticks += '<line x1="0" y1="-100" x2="0" y2="-88" transform="rotate(' + (i * 30) + ')" class="lg-tick"/>';
+    }
+    box.innerHTML = '<svg viewBox="-110 -110 220 220" aria-hidden="true">' +
+      '<circle r="106" class="lg-face"/>' +
+      '<path id="lgSector" class="lg-sector"/>' + ticks +
+      '<line id="lgHour" x1="0" y1="8" x2="0" y2="-48" class="lg-hour"/>' +
+      '<line id="lgMin" x1="0" y1="10" x2="0" y2="-74" class="lg-min"/>' +
+      '<line id="lgSec" x1="0" y1="16" x2="0" y2="-84" class="lg-sec"/>' +
+      '<circle r="6" class="lg-pin"/></svg>';
+  }
+  cancelAnimationFrame(logoRaf);
+  const loop = function(){
+    if (document.getElementById('authGate').classList.contains('hidden')) return;  // 画面が消えたら止める
+    const d = new Date();
+    const sec = d.getSeconds() + d.getMilliseconds() / 1000;
+    const min = d.getMinutes() + sec / 60;
+    const hour = d.getHours() % 12 + min / 60;
+    document.getElementById('lgSec').setAttribute('transform', 'rotate(' + sec * 6 + ')');
+    document.getElementById('lgMin').setAttribute('transform', 'rotate(' + min * 6 + ')');
+    document.getElementById('lgHour').setAttribute('transform', 'rotate(' + hour * 30 + ')');
+    // 6秒かけて減り、0.8秒で満タンに戻る
+    const t = (Date.now() % 6800) / 1000;
+    const frac = t < 6 ? 1 - t / 6 : Math.pow((t - 6) / 0.8, 0.5);
+    document.getElementById('lgSector').setAttribute('d', sectorPath_(frac, 94));
+    logoRaf = requestAnimationFrame(loop);
+  };
+  loop();
+}
+
+/** 12時の位置から時計回りに frac（0〜1）ぶんの扇形 */
+function sectorPath_(frac, r){
+  if (frac <= 0.0005) return '';
+  if (frac >= 0.9995) return 'M0,' + (-r) + 'A' + r + ',' + r + ' 0 1 1 0,' + r + 'A' + r + ',' + r + ' 0 1 1 0,' + (-r) + 'Z';
+  const a = frac * 2 * Math.PI;
+  const x = (r * Math.sin(a)).toFixed(2), y = (-r * Math.cos(a)).toFixed(2);
+  return 'M0,0L0,' + (-r) + 'A' + r + ',' + r + ' 0 ' + (frac > 0.5 ? 1 : 0) + ' 1 ' + x + ',' + y + 'Z';
+}
+
+/** 「できた！次へ」 */
+function nextStep(){
+  if (!R || R.askingReason) return;
+  const s = R.steps[R.idx];
+  const actualSec = Math.max(0, Math.round(elapsedMs_() / 1000));
+  R.results.push({ idx: R.idx, stepId: s.id, name: s.name, targetSec: s.targetSec, actualSec: actualSec,
+                   reason: '', showRemaining: R.showRemaining });
+  if (actualSec > s.targetSec){
+    // オーバー：理由を聞く。聞いている間は次の動作の時間を進めない
+    R.askingReason = true;
+    R.pausedAt = Date.now();   // 理由を書いている間は時計を止める
+    persistRun_();
+    speak(speakDur_(actualSec - s.targetSec) + 'オーバー。理由を教えてね');
+    askReason_();
+  }else{
+    if (actualSec < s.targetSec) speak(speakDur_(s.targetSec - actualSec) + '貯金');
+    goNext_();
+  }
+}
+
+function askReason_(){
+  const last = R.results[R.results.length - 1];
+  let picked = '';
+  openModal({
+    title: '⏰ ' + last.name + ' が ' + fmtDur(last.actualSec - last.targetSec) + ' オーバー',
+    body: '<p class="muted">なんでオーバーしたかな？（あとで「分析」で見られるよ）</p>' +
+      '<div class="chips" id="reasonChips">' + REASONS.map(function(r){
+        return '<button type="button" class="chip" data-r="' + esc(r) + '">' + esc(r) + '</button>';
+      }).join('') + '</div>' +
+      '<div class="form"><label>くわしく（なくてもOK）<input type="text" id="reasonText" maxlength="100"></label></div>',
+    ok: '次へ', cancel: '理由なしで次へ',
+    onOpen: function(){
+      document.querySelectorAll('#reasonChips .chip').forEach(function(btn){
+        btn.onclick = function(){
+          picked = picked === btn.dataset.r ? '' : btn.dataset.r;
+          document.querySelectorAll('#reasonChips .chip').forEach(function(b){ b.classList.toggle('active', b.dataset.r === picked); });
+        };
+      });
+    },
+    onOk: function(){
+      const text = val('reasonText');
+      last.reason = picked ? (text ? picked + '：' + text : picked) : (text ? 'その他：' + text : '');
+      R.askingReason = false;
+      goNext_();
+    },
+    onCancel: function(){
+      R.askingReason = false;
+      goNext_();
+    }
+  });
+}
+
+function goNext_(){
+  R.idx++;
+  if (R.idx >= R.steps.length){ finishRun_(); return; }
+  startStep_();
+  renderRun_();
+}
+
+function skipStep(){
+  if (!R || R.askingReason) return;
+  confirmModal('「' + R.steps[R.idx].name + '」をとばす？', 'とばした動作は記録されません（貯金も増えも減りもしません）', 'とばす', function(){
+    goNext_();
+  });
+}
+
+function togglePause(){
+  if (!R) return;
+  if (R.pausedAt){
+    R.pausedMs += Date.now() - R.pausedAt;
+    R.pausedAt = null;
+  }else{
+    R.pausedAt = Date.now();
+  }
+  persistRun_();
+  renderRun_();
+}
+
+function toggleRunShow(){
+  R.showRemaining = !R.showRemaining;
+  R.alerted = R.alerted || (R.steps[R.idx] && elapsedMs_() / 1000 >= R.steps[R.idx].targetSec);
+  persistRun_();
+  renderRun_();
+}
+
+function quitRun(){
+  if (!R) return;
+  const done = R.results.length;
+  confirmModal('ルーチンをやめる？',
+    done ? 'ここまでの ' + done + 'こ の記録は保存されます。' : 'まだ記録はないので、何も保存されません。',
+    'やめる', function(){
+      if (done) finishRun_(true);
+      else closeRun_();
+    });
+}
+
+function finishRun_(quit){
+  stopTimers_();
+  const saved = R.results.reduce(function(sum, x){ return sum + (x.targetSec - x.actualSec); }, 0);
+  const payload = {
+    runId: R.runId, memberId: R.memberId, routineId: R.routineId, date: R.date,
+    results: R.results.map(function(x){
+      return { stepId: x.stepId, name: x.name, targetSec: x.targetSec, actualSec: x.actualSec, reason: x.reason, showRemaining: x.showRemaining };
+    })
+  };
+  const outbox = load_('rt_outbox', []);
+  outbox.push(payload);
+  save_('rt_outbox', outbox);
+
+  if (!quit) speak('おつかれさま。' + (saved >= 0 ? speakDur_(saved) + '貯金できたよ' : speakDur_(-saved) + 'オーバーだったよ'));
+  document.getElementById('runBar').style.width = '100%';
+  show('runBody', false);
+  show('runDone', true);
+  document.getElementById('runDone').innerHTML =
+    '<div style="font-size:40px">' + (saved >= 0 ? '🎉' : '💪') + '</div>' +
+    '<div class="run-count">' + (quit ? 'ここまでの結果' : 'おつかれさま！') + '</div>' +
+    '<div class="done-big ' + (saved < 0 ? 'minus' : 'plus') + '">' + fmtSigned(saved) + '</div>' +
+    '<div class="done-table">' + R.results.map(function(x){
+      const d = x.targetSec - x.actualSec;
+      return '<div class="row"><span>' + esc(x.name) + (x.reason ? '<div class="reason">理由：' + esc(x.reason) + '</div>' : '') +
+        '</span><span class="num">' + fmtClock(x.actualSec) + ' <span class="' + (d < 0 ? 'minus' : 'plus') + '">' + fmtSigned(d) + '</span></span></div>';
+    }).join('') + '</div>' +
+    '<p class="muted" id="sendState" style="color:#cfe">保存しています…</p>' +
+    '<button class="run-next" onclick="closeRun_()">とじる</button>';
+  R = null;
+  save_('rt_run', null);
+  releaseWakeLock_();
+  flushOutbox().then(function(){
+    const el = document.getElementById('sendState');
+    if (!el) return;
+    el.textContent = load_('rt_outbox', []).length ? '📡 圏外のため、つながったら自動で保存します' : '✅ 保存しました';
+  });
+}
+
+function closeRun_(){
+  stopTimers_();
+  R = null;
+  save_('rt_run', null);
+  releaseWakeLock_();
+  show('runScreen', false);
+  if (S.token && member_(S.me)) switchView(S.view);
+  else location.reload();   // 圏外で起動していたときは読み込み直す
+}
+
+/** 送信待ちの結果を順番に送る。圏外ならそこで止めて、次の機会に送り直す */
+let flushing = false;
+async function flushOutbox(){
+  if (flushing || !S.token) return;
+  flushing = true;
+  try{
+    let outbox = load_('rt_outbox', []);
+    while (outbox.length){
+      const p = outbox[0];
+      try{
+        const res = await gs('saveRun', Object.assign({ token: S.token }, p));
+        S.balances = res.balances;
+      }catch(err){
+        if (err.network) break;
+        toastErr(new Error('記録を保存できませんでした：' + errText(err)));
+      }
+      outbox = load_('rt_outbox', []).slice(1);
+      save_('rt_outbox', outbox);
+    }
+  }finally{
+    flushing = false;
+  }
+  if (S.view === 'timer' && !document.getElementById('main').classList.contains('hidden')) renderTimerView();
+}
+
+function renderOutbox(){
+  const n = load_('rt_outbox', []).length;
+  const el = document.getElementById('outboxCard');
+  el.classList.toggle('hidden', !n);
+  el.innerHTML = n ? '📡 まだ送れていない記録が ' + n + ' 件あります。 <button class="btn tiny" onclick="flushOutbox()">いま送る</button>' : '';
+}
+
+/* ── 画面を消さない・声で案内 ─────────── */
+async function requestWakeLock_(){
+  try{ if ('wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
+}
+function releaseWakeLock_(){
+  try{ if (wakeLock) wakeLock.release(); }catch(e){}
+  wakeLock = null;
+}
+document.addEventListener('visibilitychange', function(){
+  if (document.visibilityState === 'visible' && R){ wakeLock = null; requestWakeLock_(); renderRun_(); }
+});
+
+/* 声の設定（端末ごと・rt_voice）。voice は声の名前（voiceURI）、空ならスマホのおまかせ */
+const VOICE_DEFAULT = { on: true, voice: '', rate: 1.05, pitch: 1, volume: 1 };
+function voicePref_(){ return Object.assign({}, VOICE_DEFAULT, load_('rt_voice', {})); }
+
+/** スマホに入っている日本語の声（読み込みが遅れる機種があるので毎回取り直す） */
+function jaVoices_(){
+  try{
+    return speechSynthesis.getVoices().filter(function(v){ return /^ja/i.test(v.lang); });
+  }catch(e){ return []; }
+}
+
+/**
+ * 読み上げ。onStatus を渡すと、うまくいったか・何で失敗したかを文字で教えてくれる（設定の「試しに聞く」用）。
+ * AndroidのChromeは cancel() の直後に speak() すると声が消えることがあるので、止めたあと少し待ってから読む。
+ */
+let speakSeq = 0;
+function speak(text, onStatus){
+  const report = onStatus || function(){};
+  try{
+    if (!('speechSynthesis' in window)){ report('⚠️ このブラウザは読み上げに対応していません'); return; }
+    const pref = voicePref_();
+    if (!pref.on){ report('「声で案内する」がオフになっています'); return; }
+    const seq = ++speakSeq;   // 新しい読み上げが来たら、古いものは読まない
+    const go = function(){
+      if (seq !== speakSeq) return;
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'ja-JP';
+      const v = jaVoices_().filter(function(x){ return x.voiceURI === pref.voice; })[0];
+      if (v) u.voice = v;
+      u.rate = pref.rate;
+      u.pitch = pref.pitch;
+      u.volume = pref.volume;
+      let started = false;
+      u.onstart = function(){ started = true; report('▶ 読み上げ中…（声：' + (v ? v.name : 'おまかせ') + '）'); };
+      u.onend = function(){ if (started) report('✅ 読み上げました。聞こえなかったら「メディアの音量」を上げてください'); };
+      u.onerror = function(e){
+        if (seq === speakSeq && e.error !== 'interrupted' && e.error !== 'canceled') report('⚠️ 読み上げエラー：' + e.error);
+      };
+      speechSynthesis.resume();   // Chromeは一時停止のまま固まることがある
+      speechSynthesis.speak(u);
+      setTimeout(function(){
+        if (!started && seq === speakSeq) report('⚠️ 読み上げが始まりません。Androidなら「Google 音声サービス」の日本語の声が入っているか確認してください');
+      }, 3000);
+    };
+    if (speechSynthesis.speaking || speechSynthesis.pending){
+      speechSynthesis.cancel();
+      setTimeout(go, 150);
+    }else{
+      go();
+    }
+  }catch(e){ report('⚠️ ' + e.message); }
+}
+
+function testVoice(){
+  const el = document.getElementById('voiceStatus');
+  el.textContent = '準備中…';
+  speak('次は、歯みがき。目標3分', function(msg){ el.textContent = msg; });
+}
+function speakDur_(sec){
+  sec = Math.abs(Math.round(sec));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return (m ? m + '分' : '') + (s || !m ? s + '秒' : '');
+}
+
+
+/* ============================================================
+   5. 貯金タブ（残高・交換・承認）
+   ============================================================ */
+
+async function renderBank(){
+  renderMemberSeg_('bankMembers', S.bankMember, 'pickBankMember');
+  const m = member_(S.bankMember) || member_(S.me);
+  const b = bal_(m.id);
+  document.getElementById('bankSummary').innerHTML =
+    '<div class="bank-mini"><div><div class="label">' + esc(m.name) + 'の時間貯金</div><div class="val">' + fmtDur(b.balanceSec) + '</div></div>' +
+    '<div class="side">' + (b.pendingSec ? '承認待ち <b>' + fmtDur(b.pendingSec) + '</b>' : '') + '</div></div>' +
+    '<div class="stat-row">' +
+      '<div class="stat"><div class="k">今週</div><div class="v ' + sign_(b.weekSec) + '">' + fmtSigned(b.weekSec) + '</div></div>' +
+      '<div class="stat"><div class="k">今月</div><div class="v ' + sign_(b.monthSec) + '">' + fmtSigned(b.monthSec) + '</div></div>' +
+      '<div class="stat"><div class="k">使える</div><div class="v">' + Math.max(0, Math.floor(b.balanceSec / 60)) + '分</div></div>' +
+    '</div>';
+
+  const canUse = m.id === S.me && b.balanceSec >= 60;
+  document.getElementById('rewardList').innerHTML = S.rewards.filter(function(w){ return w.active; }).map(function(w){
+    return '<button class="tile" ' + (canUse ? '' : 'disabled') + ' onclick="openExchange(\'' + w.id + '\')">' +
+      '<span class="name">' + esc(w.name) + '</span><span class="rate">1分 → ' + fmtNum(w.perMin) + esc(w.unit) + '</span></button>';
+  }).join('') || '<p class="empty">交換先がありません</p>';
+  if (m.id !== S.me) document.getElementById('rewardList').insertAdjacentHTML('beforeend', '<p class="muted" style="grid-column:1/-1;margin:0">交換の申請は本人の端末からできます</p>');
+
+  ['pendingList', 'exchangeList', 'runList'].forEach(function(id){
+    document.getElementById(id).innerHTML = '<p class="empty">読み込み中…</p>';
+  });
+  try{
+    const [all, mine, runs] = await Promise.all([
+      gs('getExchanges', { token: S.token, limit: 100 }),
+      gs('getExchanges', { token: S.token, memberId: m.id, limit: 20 }),
+      gs('getHistory', { token: S.token, memberId: m.id, days: 14 })
+    ]);
+    renderPending_(all.filter(function(x){ return x.status === '承認待ち'; }));
+    renderExchangeHistory_(mine.filter(function(x){ return x.status !== '承認待ち'; }));
+    renderRuns_(runs);
+  }catch(err){ toastErr(err); }
+}
+
+function pickBankMember(id){ S.bankMember = id; renderBank(); }
+
+function renderPending_(rows){
+  const meIsParent = member_(S.me).role === '親';
+  S.pendingCount = rows.length;
+  renderNav();
+  document.getElementById('pendingList').innerHTML = rows.map(function(x){
+    let actions = '';
+    if (meIsParent) actions = '<button class="btn tiny primary" onclick="decide(\'' + x.id + '\', true)">承認</button>' +
+                              '<button class="btn tiny danger" onclick="decide(\'' + x.id + '\', false)">却下</button>';
+    else if (x.memberId === S.me) actions = '<button class="btn tiny" onclick="cancelExchange(\'' + x.id + '\')">取消</button>';
+    return '<div class="list-item"><div class="main"><div class="title">' + esc(x.memberName) + '：' + esc(x.rewardName) +
+      ' <span class="val">' + fmtNum(x.value) + esc(x.unit) + '</span></div>' +
+      '<div class="sub">' + fmtDur(x.sec) + 'を使う・' + esc(x.at.slice(5, 16)) + (x.memo ? '・' + esc(x.memo) : '') + '</div></div>' +
+      '<div class="actions">' + actions + '</div></div>';
+  }).join('') || '<p class="empty">承認待ちはありません</p>';
+}
+
+function renderExchangeHistory_(rows){
+  const badge = { '承認': 'ok', '却下': 'ng', '取消': 'gray' };
+  document.getElementById('exchangeList').innerHTML = rows.map(function(x){
+    return '<div class="list-item"><div class="main"><div class="title">' + esc(x.rewardName) + ' ' + fmtNum(x.value) + esc(x.unit) +
+      ' <span class="badge ' + (badge[x.status] || 'gray') + '">' + esc(x.status) + '</span></div>' +
+      '<div class="sub">' + esc(x.at.slice(0, 16)) + '・' + fmtDur(x.sec) + (x.decidedBy ? '・' + esc(x.decidedBy) : '') +
+      (x.rejectReason ? '・理由：' + esc(x.rejectReason) : '') + '</div></div>' +
+      '<div class="val minus">' + (x.status === '承認' ? '−' + fmtDur(x.sec) : '') + '</div></div>';
+  }).join('') || '<p class="empty">まだありません</p>';
+}
+
+function renderRuns_(runs){
+  const meIsParent = member_(S.me).role === '親';
+  document.getElementById('runList').innerHTML = runs.map(function(r, i){
+    const allCanceled = r.activeCount === 0;
+    const label = esc(r.routineName) + '（' + esc(r.date) + '）';
+    const trash = meIsParent && !allCanceled
+      ? '<button class="btn tiny danger" title="この回をまるごと無効" onclick="event.stopPropagation(); cancelRun(\'' + r.runId + '\', \'\', \'' + label + '\')">🗑</button>' : '';
+    return '<div class="list-item col' + (allCanceled ? ' canceled' : '') + '"><div class="list-head" onclick="toggle(\'run' + i + '\')"><div class="main">' +
+      '<div class="title">' + esc(r.routineName) + (allCanceled ? ' <span class="badge gray">無効</span>' : '') + '</div>' +
+      '<div class="sub">' + esc(r.date) + '・' + r.steps.length + 'こ・タップで内訳</div></div>' +
+      '<div class="val ' + (allCanceled ? '' : sign_(r.savedSec)) + '">' + (allCanceled ? '—' : fmtSigned(r.savedSec)) + '</div>' + trash + '</div>' +
+      '<div class="steps-mini hidden" id="run' + i + '">' + r.steps.map(function(s){
+        const del = meIsParent && !s.canceled
+          ? ' <button class="btn tiny danger step-del" title="この動作だけ無効" onclick="cancelRun(\'' + r.runId + '\', \'' + s.logId + '\', \'' + esc(s.name) + '\')">🗑</button>' : '';
+        return '<div class="row' + (s.canceled ? ' canceled' : '') + '"><span>' + (s.hidden ? '🙈 ' : '') + esc(s.name) + '</span><span class="num">' +
+          fmtClock(s.actualSec) + ' / ' + fmtClock(s.targetSec) +
+          ' <b class="' + (s.canceled ? '' : sign_(s.savedSec)) + '">' + fmtSigned(s.savedSec) + '</b>' + del + '</span></div>' +
+          (s.reason ? '<div class="reason">理由：' + esc(s.reason) + '</div>' : '') +
+          (s.canceled ? '<div class="reason">🚫 無効' + (s.cancelReason ? '：' + esc(s.cancelReason) : '') + '</div>' : '');
+      }).join('') + '</div></div>';
+  }).join('') || '<p class="empty">まだ記録がありません</p>';
+}
+
+function openExchange(rewardId){
+  const w = S.rewards.filter(function(x){ return x.id === rewardId; })[0];
+  const maxMin = Math.floor(bal_(S.me).balanceSec / 60);
+  openModal({
+    title: '🎁 ' + w.name + 'に交換',
+    body: '<p class="muted">使えるのは ' + maxMin + '分 まで。親が承認したら決まります。</p>' +
+      '<div class="form"><label>使う時間（分）<input type="number" id="exMin" min="1" max="' + maxMin + '" value="' + maxMin + '" inputmode="numeric"></label>' +
+      '<p id="exPreview" style="font-size:18px;font-weight:800;margin:0 0 10px"></p>' +
+      '<label>メモ（なくてもOK）<input type="text" id="exMemo" maxlength="100" placeholder="例：土曜日に使いたい"></label></div>',
+    ok: '申請する',
+    onOpen: function(){
+      const upd = function(){
+        const n = Math.max(0, Math.floor(Number(val('exMin')) || 0));
+        document.getElementById('exPreview').textContent = n + '分 → ' + fmtNum(Math.round(n * w.perMin * 100) / 100) + w.unit;
+      };
+      document.getElementById('exMin').oninput = upd;
+      upd();
+    },
+    onOk: async function(){
+      const res = await gs('requestExchange', { token: S.token, memberId: S.me, rewardId: w.id, minutes: Number(val('exMin')), memo: val('exMemo') });
+      S.balances = res.balances;
+      toast(res.message, 'ok');
+      renderBank();
+    }
+  });
+}
+
+async function cancelExchange(id){
+  try{
+    const res = await gs('cancelExchange', { token: S.token, requestId: id });
+    S.balances = res.balances;
+    toast(res.message, 'ok');
+    renderBank();
+  }catch(err){ toastErr(err); }
+}
+
+async function decide(id, approve){
+  const pin = await needPin();
+  if (!pin) return;
+  const go = async function(reason){
+    try{
+      const res = await gs('decideExchange', { token: S.token, actorId: S.me, pin: pin, requestId: id, approve: approve, reason: reason || '' });
+      S.balances = res.balances;
+      toast(res.message, 'ok');
+      renderBank();
+    }catch(err){ pinFailed_(err); toastErr(err); }
+  };
+  if (approve) return go('');
+  openModal({
+    title: '却下する',
+    body: '<div class="form"><label>理由（子どもに見えます）<input type="text" id="rjReason" maxlength="100"></label></div>',
+    ok: '却下する',
+    onOk: function(){ return go(val('rjReason')); }
+  });
+}
+
+/** 怪しい記録を無効にする（親・PIN）。logId があればその動作だけ、空ならその回まるごと */
+async function cancelRun(runId, logId, label){
+  const pin = await needPin();
+  if (!pin) return;
+  openModal({
+    title: (logId ? '「' + label + '」だけ' : label + ' をまるごと') + '無効にする？',
+    body: '<p class="muted">無効にすると、その分の貯金（プラスもマイナスも）がなかったことになります。記録は消えずに「無効」として残ります。</p>' +
+      '<div class="form"><label>理由<input type="text" id="crReason" maxlength="100" placeholder="例：早すぎてあやしい、押しまちがい"></label></div>',
+    ok: '無効にする',
+    onOk: async function(){
+      try{
+        const res = await gs('cancelRun', { token: S.token, actorId: S.me, pin: pin, runId: runId, logId: logId || '', reason: val('crReason') });
+        toast(res.message, 'ok');
+        await refresh();
+      }catch(err){ pinFailed_(err); throw err; }
+    }
+  });
+}
+
+
+/* ============================================================
+   6. 分析タブ
+   ============================================================ */
+
+async function renderAnalysis(){
+  renderMemberSeg_('anMembers', S.anMember, 'pickAnMember');
+  document.getElementById('anDays').innerHTML = [7, 30, 90].map(function(d){
+    return '<button class="' + (S.anDays === d ? 'active' : '') + '" onclick="pickAnDays(' + d + ')">' + d + '日</button>';
+  }).join('');
+  const box = document.getElementById('analysis');
+  box.innerHTML = '<p class="empty">読み込み中…</p>';
+  let a;
+  try{ a = await gs('getAnalysis', { token: S.token, memberId: S.anMember, days: S.anDays }); }
+  catch(err){ box.innerHTML = ''; toastErr(err); return; }
+  if (!a.steps.length){ box.innerHTML = '<div class="card"><p class="empty">この期間の記録がありません</p></div>'; return; }
+
+  const maxReason = a.reasons.length ? a.reasons[0].count : 1;
+  box.innerHTML =
+    '<div class="card"><h2>👁 表示あり と 🙈 かくす の比べっこ</h2><div class="compare">' +
+      modeStat_('👁 残り時間を表示', a.mode.shown) + modeStat_('🙈 かくす', a.mode.hidden) +
+    '</div><p class="muted" style="margin:8px 0 0">1つの動作あたりの平均貯金です。</p></div>' +
+
+    '<div class="card"><h2>オーバーしやすい動作</h2><table class="grid"><tr><th>動作</th><th>回数</th><th>オーバー</th><th>平均</th><th>貯金計</th></tr>' +
+    a.steps.map(function(s){
+      return '<tr><td>' + esc(s.name) + '<div class="muted" style="font-size:11px">' + esc(s.routineName) + '・目標' + fmtClock(s.targetSec) + '</div></td>' +
+        '<td>' + s.count + '</td><td class="' + (s.overCount ? 'minus' : '') + '">' + Math.round(s.overRate * 100) + '%</td>' +
+        '<td class="num">' + fmtClock(s.avgActual) + '</td><td class="num ' + sign_(s.totalSaved) + '">' + fmtSigned(s.totalSaved) + '</td></tr>';
+    }).join('') + '</table></div>' +
+
+    '<div class="card"><h2>オーバーの理由ランキング</h2>' + (a.reasons.map(function(r){
+      return '<div class="bar-row"><span class="k">' + esc(r.label) + '</span><span class="track"><span class="fill" style="display:block;width:' +
+        Math.round(r.count / maxReason * 100) + '%"></span></span><span class="n">' + r.count + '回</span></div>';
+    }).join('') || '<p class="empty">オーバーなし！すごい！</p>') + '</div>' +
+
+    '<div class="card"><h2>最近のオーバー</h2><div class="list">' + (a.overs.map(function(o){
+      return '<div class="list-item"><div class="main"><div class="title">' + esc(o.name) + '</div>' +
+        '<div class="sub">' + esc(o.date) + '・' + esc(o.routineName) + (o.reason ? '・' + esc(o.reason) : '・理由なし') + '</div></div>' +
+        '<div class="val minus">+' + fmtDur(o.overSec) + '</div></div>';
+    }).join('') || '<p class="empty">なし</p>') + '</div></div>';
+}
+
+function modeStat_(label, m){
+  return '<div class="stat"><div class="k">' + label + '</div><div class="v ' + (m.count ? sign_(m.avgSaved) : '') + '">' +
+    (m.count ? fmtSigned(m.avgSaved) : '—') + '</div><div class="muted">' + m.count + '回</div></div>';
+}
+function pickAnMember(id){ S.anMember = id; renderAnalysis(); }
+function pickAnDays(d){ S.anDays = d; renderAnalysis(); }
+
+
+/* ============================================================
+   7. 設定タブ（親はPINで編集できる）
+   ============================================================ */
+
+function renderSettings(){
+  const me = member_(S.me);
+  const isParent = me.role === '親';
+  const unlocked = isParent && S.parentPin && S.pinFor === S.me;
+  let html = '<div class="card"><h2>この端末</h2><p>家庭：<b>' + esc(S.familyName) + '</b>　使う人：<b>' + esc(me.name) + '</b></p>' +
+    '<div class="btn-row"><button class="btn" onclick="openWho()">使う人を変える</button>' +
+    (IS_LOCAL ? '' : '<button class="btn danger" onclick="logout()">ログアウト</button>') + '</div></div>' +
+    voiceCard_() + (IS_LOCAL ? backupCard_() : '');
+
+  if (!unlocked){
+    const mine = S.routines.filter(function(r){ return r.createdBy === S.me; });
+    html += '<div class="card"><div class="card-head"><h2>自分で作ったルーチン</h2><button class="btn tiny primary" onclick="editRoutine(\'\')">＋ 作る</button></div><div class="list">' +
+      (mine.map(routineItem_).join('') || '<p class="empty">まだありません</p>') + '</div></div>';
+  }
+  if (!isParent){
+    html += '<div class="card"><p class="muted">ほかのルーチン・交換先・メンバーの変更は、親が行います。</p></div>';
+  }else if (!unlocked){
+    html += '<div class="card"><h2>🔒 親の設定</h2><p class="muted">ルーチン・交換先・メンバーの変更にはPINが必要です。</p>' +
+      '<button class="btn primary" onclick="unlockSettings()">PINを入れて開く</button></div>';
+  }else{
+    html += '<div class="card"><div class="card-head"><h2>ルーチン</h2><button class="btn tiny primary" onclick="editRoutine(\'\')">＋ 追加</button></div><div class="list">' +
+      S.routines.map(routineItem_).join('') + '</div></div>';
+
+    html += '<div class="card"><div class="card-head"><h2>交換先</h2><button class="btn tiny primary" onclick="editReward(\'\')">＋ 追加</button></div><div class="list">' +
+      S.rewards.map(function(w){
+        return '<div class="list-item"><div class="main"><div class="title">' + esc(w.name) + (w.active ? '' : ' <span class="badge gray">停止中</span>') + '</div>' +
+          '<div class="sub">貯金1分 → ' + fmtNum(w.perMin) + esc(w.unit) + '</div></div>' +
+          '<div class="actions"><button class="btn tiny" onclick="editReward(\'' + w.id + '\')">編集</button></div></div>';
+      }).join('') + '</div></div>';
+
+    html += '<div class="card"><div class="card-head"><h2>メンバー</h2><button class="btn tiny primary" onclick="editMember(\'\')">＋ 追加</button></div><div class="list">' +
+      S.members.map(function(m){
+        return '<div class="list-item"><div class="main"><div class="title">' + esc(m.name) + ' <span class="badge ' + (m.role === '親' ? 'pending' : 'ok') + '">' + esc(m.role) + '</span>' +
+          (m.active ? '' : ' <span class="badge gray">停止中</span>') + '</div></div>' +
+          '<div class="actions"><button class="btn tiny" onclick="editMember(\'' + m.id + '\')">編集</button></div></div>';
+      }).join('') + '</div></div>';
+
+    html += '<div class="card"><h2>家庭のパスワード</h2><button class="btn" onclick="changePassword()">パスワードを変える</button></div>';
+  }
+  document.getElementById('settings').innerHTML = html;
+}
+
+function routineItem_(r){
+  const who = r.memberId ? (member_(r.memberId) || { name: '?' }).name + '用' : 'みんな';
+  return '<div class="list-item"><div class="main"><div class="title">' + esc(r.name) + (r.active ? '' : ' <span class="badge gray">停止中</span>') + '</div>' +
+    '<div class="sub">' + who + '・' + r.steps.length + 'こ・' + r.steps.map(function(s){ return esc(s.name); }).join(' → ') + '</div></div>' +
+    '<div class="actions"><button class="btn tiny" onclick="editRoutine(\'' + r.id + '\')">編集</button></div></div>';
+}
+
+/** 設定タブの「声の設定」カード（この端末だけの設定） */
+function voiceCard_(){
+  if (!('speechSynthesis' in window)) {
+    return '<div class="card"><h2>声の設定</h2><p class="muted">このブラウザは読み上げに対応していません。</p></div>';
+  }
+  const pref = voicePref_();
+  const voices = jaVoices_();
+  const slider = function(id, label, min, max, step, value){
+    return '<label>' + label + ' <span class="muted" id="' + id + 'Val">' + value + '</span>' +
+      '<input type="range" id="' + id + '" min="' + min + '" max="' + max + '" step="' + step + '" value="' + value + '"' +
+      ' oninput="setVoicePref(\'' + id + '\', this.value)" style="width:100%"></label>';
+  };
+  return '<div class="card"><h2>声の設定</h2><div class="form">' +
+    '<label class="inline"><input type="checkbox"' + (pref.on ? ' checked' : '') + ' onchange="setVoicePref(\'on\', this.checked)"> 声で案内する</label>' +
+    '<label>声の種類<select onchange="setVoicePref(\'voice\', this.value)"><option value="">おまかせ</option>' +
+      voices.map(function(v){
+        return '<option value="' + esc(v.voiceURI) + '"' + (v.voiceURI === pref.voice ? ' selected' : '') + '>' + esc(v.name) + '</option>';
+      }).join('') + '</select></label>' +
+    (voices.length ? '' : '<p class="muted">声の一覧を読み込み中です。出てこないときは少し待ってから設定タブを開き直してください。</p>') +
+    slider('rate', '速さ', 0.6, 1.6, 0.05, pref.rate) +
+    slider('pitch', '声の高さ', 0.5, 1.8, 0.05, pref.pitch) +
+    slider('volume', '音量', 0.1, 1, 0.05, pref.volume) +
+    '</div><button class="btn primary" onclick="testVoice()">🔊 試しに聞く</button>' +
+    '<p class="muted" id="voiceStatus" style="margin:8px 0 0"></p>' +
+    '<p class="muted" style="margin:4px 0 0">この端末の日本語の声：' + voices.length + '種類' +
+      (voices.length ? '' : '（見つかりません）') + '</p></div>';
+}
+
+function setVoicePref(key, value){
+  const pref = voicePref_();
+  pref[key] = (key === 'on') ? !!value : (key === 'voice' ? value : Number(value));
+  save_('rt_voice', pref);
+  const label = document.getElementById(key + 'Val');
+  if (label) label.textContent = value;
+}
+
+// 声の一覧はあとから届く機種がある。届いたら設定タブを描き直す
+try{
+  if ('speechSynthesis' in window) speechSynthesis.addEventListener('voiceschanged', function(){
+    if (S.view === 'settings' && !document.getElementById('main').classList.contains('hidden')) renderSettings();
+  });
+}catch(e){}
+
+/* ── Home版：データはスマホの中だけなので、バックアップの書き出し・読み込みを用意する ── */
+function backupCard_(){
+  return '<div class="card"><h2>データの保存（このスマホの中）</h2>' +
+    '<p class="muted">データはこのスマホの中だけにあります。機種変更やブラウザのデータ削除で消えてしまうので、ときどきバックアップを書き出してください。</p>' +
+    '<div class="btn-row"><button class="btn" onclick="exportBackup()">⬇ バックアップを書き出す</button>' +
+    '<label class="btn" style="display:inline-flex; align-items:center; cursor:pointer;">⬆ バックアップから戻す' +
+    '<input type="file" accept="application/json,.json" onchange="importBackup(this)" style="display:none"></label></div>' +
+    '<div style="margin-top:12px"><button class="btn danger" onclick="clearLocalData()">このスマホのデータを全部消す</button></div></div>';
+}
+
+function exportBackup(){
+  const text = LocalStore.exportAll({ token: S.token, familyName: S.familyName });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  a.download = 'RoutineBankHome_' + localDate_() + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 2000);
+  toast('バックアップを書き出しました（ダウンロードフォルダ）', 'ok');
+}
+
+async function importBackup(input){
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  if (!(await needPin())) return;   // 古いバックアップで貯金を戻す、などができないように親だけ
+  confirmModal('バックアップから戻す？', '今このスマホにあるデータは、バックアップの中身で上書きされます。', '戻す', async function(){
+    const text = await file.text();
+    const extra = LocalStore.importAll(text);
+    save_('rt_token', extra.token || null);
+    save_('rt_run', null);
+    save_('rt_outbox', null);
+    location.reload();
+  });
+}
+
+async function clearLocalData(){
+  const pin = await needPin();
+  if (!pin) return;
+  confirmModal('データを全部消す？', 'ルーチン・記録・貯金・メンバーがすべて消えて、最初の画面に戻ります。元に戻せません。', '全部消す', function(){
+    LocalStore.clearAll();
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++){ if (localStorage.key(i).indexOf('rt_') === 0) keys.push(localStorage.key(i)); }
+    keys.forEach(function(k){ localStorage.removeItem(k); });
+    location.reload();
+  });
+}
+
+async function unlockSettings(){
+  if (await needPin()) renderSettings();
+}
+
+/** 親のPINを聞いて確認する。確認できたらPINを返す（この画面を開いている間は覚えておく） */
+function needPin(){
+  if (member_(S.me).role !== '親'){ toast('この操作は親だけができます', 'err'); return Promise.resolve(''); }
+  return askPin_(S.me);
+}
+
+/** 親 memberId のPINを聞いてサーバーで確認する。確認できたらPIN、やめたら '' を返す */
+function askPin_(memberId){
+  const m = member_(memberId);
+  if (!m.hasPin) return Promise.resolve('-');   // PIN未設定の親（通常は起きない）はそのまま通す
+  if (S.parentPin && S.pinFor === memberId) return Promise.resolve(S.parentPin);
+  return new Promise(function(resolve){
+    openModal({
+      title: '🔒 ' + m.name + 'のPIN',
+      body: '<div class="form"><label>数字4けた<input type="password" id="pinInput" inputmode="numeric" maxlength="4" autocomplete="off"></label></div>',
+      ok: 'OK',
+      onOpen: function(){ setTimeout(function(){ document.getElementById('pinInput').focus(); }, 50); },
+      onOk: async function(){
+        const pin = val('pinInput');
+        await gs('verifyParentPin', { token: S.token, actorId: memberId, pin: pin });
+        S.parentPin = pin;
+        S.pinFor = memberId;
+        resolve(pin);
+      },
+      onCancel: function(){ resolve(''); }
+    });
+  });
+}
+
+function pinFailed_(err){
+  if (/PIN/.test(errText(err))){ S.parentPin = ''; S.pinFor = ''; }
+}
+
+/** 設定の保存（PIN付きでサーバーへ）→ 読み直し */
+async function saveSetting_(fn, args){
+  try{
+    const res = await gs(fn, Object.assign({ token: S.token, actorId: S.me, pin: S.parentPin }, args));
+    toast(res.message, 'ok');
+    await refresh();
+  }catch(err){ pinFailed_(err); throw err; }
+}
+
+function editRoutine(id){
+  const r = id ? S.routines.filter(function(x){ return x.id === id; })[0]
+               : { id: '', name: '', memberId: '', order: S.routines.length + 1, active: true, steps: [{ id: '', name: '', targetSec: 180 }] };
+  openModal({
+    title: id ? 'ルーチンを編集' : 'ルーチンを追加',
+    body: '<div class="form">' +
+      '<label>ルーチン名<input type="text" id="rtName" value="' + esc(r.name) + '" placeholder="例：朝の支度"></label>' +
+      (isParent_(S.me) ? '<label>だれ用？<select id="rtMember"><option value="">みんな</option>' + S.members.filter(function(m){ return m.active; }).map(function(m){
+        return '<option value="' + m.id + '"' + (m.id === r.memberId ? ' selected' : '') + '>' + esc(m.name) + '</option>';
+      }).join('') + '</select></label>' : '<p class="muted">このルーチンは自分専用になります。</p>') +
+      '<label>表示順<input type="number" id="rtOrder" value="' + r.order + '"></label>' +
+      '<label class="inline"><input type="checkbox" id="rtActive"' + (r.active ? ' checked' : '') + '> 使う（はずすと一覧に出ません）</label>' +
+      '<h2 style="margin-top:6px">動作（上から順番）</h2><div id="stepRows"></div>' +
+      '<button type="button" class="btn tiny" onclick="addStepRow()">＋ 動作を追加</button></div>',
+    ok: '保存',
+    onOpen: function(){ r.steps.forEach(function(s){ addStepRow(s); }); },
+    onOk: function(){
+      const steps = Array.prototype.map.call(document.querySelectorAll('#stepRows .step-edit'), function(row){
+        return { id: row.dataset.id, name: row.querySelector('.sn').value,
+                 targetSec: (Number(row.querySelector('.sm').value) || 0) * 60 + (Number(row.querySelector('.ss').value) || 0) };
+      });
+      return saveRoutine_({ routineId: r.id, name: val('rtName'), memberId: val('rtMember'),
+        order: Number(val('rtOrder')), active: document.getElementById('rtActive').checked, steps: steps });
+    }
+  });
+}
+
+/** 自分が作ったルーチンはPINなし、ほかの人のものは親PINを聞いてから保存 */
+async function saveRoutine_(args){
+  if (args.routineId && S.routines.filter(function(x){ return x.id === args.routineId; })[0].createdBy !== S.me){
+    if (!(await needPin())) throw new Error('PINの確認をやめました');
+  }
+  return saveSetting_('saveRoutine', args);
+}
+
+function addStepRow(s){
+  s = s || { id: '', name: '', targetSec: 180 };
+  const row = document.createElement('div');
+  row.className = 'step-edit';
+  row.dataset.id = s.id;
+  row.innerHTML = '<input type="text" class="sn" placeholder="動作名" value="' + esc(s.name) + '">' +
+    '<input type="number" class="sm" min="0" inputmode="numeric" value="' + Math.floor(s.targetSec / 60) + '"><span class="u">分</span>' +
+    '<input type="number" class="ss" min="0" max="59" inputmode="numeric" value="' + (s.targetSec % 60) + '"><span class="u">秒</span>' +
+    '<button type="button" class="btn" title="上へ">↑</button><button type="button" class="btn danger" title="消す">✕</button>';
+  const btns = row.querySelectorAll('button');
+  btns[0].onclick = function(){ if (row.previousElementSibling) row.parentNode.insertBefore(row, row.previousElementSibling); };
+  btns[1].onclick = function(){ row.remove(); };
+  document.getElementById('stepRows').appendChild(row);
+}
+
+function editReward(id){
+  const w = id ? S.rewards.filter(function(x){ return x.id === id; })[0]
+               : { id: '', name: '', perMin: 1, unit: '', order: S.rewards.length + 1, active: true };
+  openModal({
+    title: id ? '交換先を編集' : '交換先を追加',
+    body: '<div class="form">' +
+      '<label>名前<input type="text" id="rwName" value="' + esc(w.name) + '" placeholder="例：ゲーム時間"></label>' +
+      '<label>貯金1分あたり<input type="number" id="rwPer" step="any" value="' + w.perMin + '"></label>' +
+      '<label>単位<input type="text" id="rwUnit" value="' + esc(w.unit) + '" placeholder="例：分、円"></label>' +
+      '<label>表示順<input type="number" id="rwOrder" value="' + w.order + '"></label>' +
+      '<label class="inline"><input type="checkbox" id="rwActive"' + (w.active ? ' checked' : '') + '> 使う</label>' +
+      '<p class="muted">例）ゲーム時間：1分あたり「1」単位「分」／ おこづかい：1分あたり「10」単位「円」</p></div>',
+    ok: '保存',
+    onOk: function(){
+      return saveSetting_('saveReward', { rewardId: w.id, name: val('rwName'), perMin: Number(val('rwPer')), unit: val('rwUnit'),
+        order: Number(val('rwOrder')), active: document.getElementById('rwActive').checked });
+    }
+  });
+}
+
+function editMember(id){
+  const m = id ? member_(id) : { id: '', name: '', role: '子', order: S.members.length + 1, active: true, hasPin: false };
+  openModal({
+    title: id ? 'メンバーを編集' : 'メンバーを追加',
+    body: '<div class="form">' +
+      '<label>名前<input type="text" id="mbName" value="' + esc(m.name) + '"></label>' +
+      '<label>役割<select id="mbRole"><option value="子"' + (m.role !== '親' ? ' selected' : '') + '>子</option>' +
+        '<option value="親"' + (m.role === '親' ? ' selected' : '') + '>親（承認・設定ができる）</option></select></label>' +
+      '<label>PIN（親のみ・数字4けた）<input type="password" id="mbPin" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="' +
+        (m.hasPin ? '変えるときだけ入力' : '') + '"></label>' +
+      '<label>表示順<input type="number" id="mbOrder" value="' + m.order + '"></label>' +
+      '<label class="inline"><input type="checkbox" id="mbActive"' + (m.active ? ' checked' : '') + '> 使う</label></div>',
+    ok: '保存',
+    onOk: function(){
+      return saveSetting_('saveMember', { memberId: m.id, name: val('mbName'), role: val('mbRole'), newPin: val('mbPin'),
+        order: Number(val('mbOrder')), active: document.getElementById('mbActive').checked });
+    }
+  });
+}
+
+function changePassword(){
+  openModal({
+    title: '家庭のパスワードを変える',
+    body: '<div class="form"><label>今のパスワード<input type="password" id="pwCur"></label>' +
+      '<label>新しいパスワード（4文字以上）<input type="password" id="pwNew"></label></div>',
+    ok: '変える',
+    onOk: async function(){
+      const res = await gs('changeFamilyPassword', { token: S.token, actorId: S.me, pin: S.parentPin, currentPassword: val('pwCur'), newPassword: val('pwNew') });
+      toast(res.message, 'ok');
+    }
+  });
+}
+
+
+/* ============================================================
+   8. 共通の部品
+   ============================================================ */
+
+function show(id, visible){
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('hidden', !visible);
+}
+function val(id){
+  const el = document.getElementById(id);
+  return el ? String(el.value).trim() : '';
+}
+function toggle(id){ document.getElementById(id).classList.toggle('hidden'); }
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+  });
+}
+function isParent_(id){ const m = member_(id); return !!m && m.role === '親'; }
+function member_(id){ return S.members.filter(function(m){ return m.id === id; })[0]; }
+function activeMembers_(){ return S.members.filter(function(m){ return m.active; }); }
+function bal_(id){ return S.balances[id] || { balanceSec: 0, weekSec: 0, monthSec: 0, pendingSec: 0 }; }
+function sign_(sec){ return sec < 0 ? 'minus' : (sec > 0 ? 'plus' : ''); }
+
+function renderMemberSeg_(elId, current, onPick){
+  document.getElementById(elId).innerHTML = activeMembers_().map(function(m){
+    return '<button class="' + (m.id === current ? 'active' : '') + '" onclick="' + onPick + '(\'' + m.id + '\')">' + esc(m.name) + '</button>';
+  }).join('');
+}
+
+/** 1:05 の形（時計表示） */
+function fmtClock(sec){
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
+}
+/** 12分30秒 の形 */
+function fmtDur(sec){
+  const neg = sec < 0;
+  sec = Math.abs(Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  const t = (h ? h + '時間' : '') + (m ? m + '分' : '') + (s || (!h && !m) ? s + '秒' : '');
+  return (neg ? '−' : '') + t;
+}
+/** +1分20秒 / −40秒 の形 */
+function fmtSigned(sec){ return (sec > 0 ? '+' : '') + fmtDur(sec); }
+function fmtNum(n){ return Number(n).toLocaleString('ja-JP', { maximumFractionDigits: 2 }); }
+
+function localDate_(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function uuid_(){
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
+/**
+ * ダイアログ。opts = {title, body, ok, cancel, onOpen, onOk, onCancel}
+ * onOk が例外を投げたらダイアログは閉じずにエラーを表示する
+ */
+function openModal(opts){
+  document.getElementById('modalTitle').textContent = opts.title;
+  document.getElementById('modalBody').innerHTML = opts.body || '';
+  document.getElementById('modalError').textContent = '';
+  const okBtn = document.getElementById('modalOk');
+  const cancelBtn = document.getElementById('modalCancel');
+  okBtn.textContent = opts.ok || 'OK';
+  cancelBtn.textContent = opts.cancel || 'やめる';
+  okBtn.disabled = false;
+  okBtn.onclick = async function(){
+    okBtn.disabled = true;
+    try{
+      if (opts.onOk) await opts.onOk();
+      show('modal', false);
+    }catch(err){
+      document.getElementById('modalError').textContent = errText(err);
+    }finally{
+      okBtn.disabled = false;
+    }
+  };
+  cancelBtn.onclick = function(){
+    show('modal', false);
+    if (opts.onCancel) opts.onCancel();
+  };
+  show('modal', true);
+  if (opts.onOpen) opts.onOpen();
+}
+
+function confirmModal(title, text, okLabel, onOk){
+  openModal({ title: title, body: '<p>' + esc(text) + '</p>', ok: okLabel, onOk: onOk });
+}
+
+function toast(msg, kind){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast' + (kind ? ' ' + kind : '');
+  clearTimeout(el._t);
+  el._t = setTimeout(function(){ el.classList.add('hidden'); }, 3200);
+}
+function errText(err){ return (err && err.message) || String(err); }
+function toastErr(err){ toast(errText(err), 'err'); console.error(err); }
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js'); });
+}
+</script>
+</body>
+</html>
