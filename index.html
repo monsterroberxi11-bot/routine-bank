@@ -253,6 +253,12 @@ main{padding:12px 12px 90px; max-width:900px; margin:0 auto;}
 .steps-mini{margin-top:8px; font-size:12.5px; border-top:1px dashed var(--line); padding-top:6px;}
 .steps-mini .row{display:flex; justify-content:space-between; gap:8px; padding:2px 0;}
 .steps-mini .reason{color:var(--muted); font-size:11.5px; padding-left:10px;}
+.steps-mini .row.canceled > span{text-decoration:line-through; color:var(--muted);}
+.steps-mini .row.canceled b{color:var(--muted);}
+.list-item.canceled{background:#f6f7f7;}
+.list-item.canceled .title{color:var(--muted);}
+.list-head .btn.tiny{flex:0 0 auto;}
+.step-del{padding:2px 6px; min-height:26px; font-size:12px; margin-left:4px;}
 .empty{color:var(--muted); font-size:13px; text-align:center; padding:10px;}
 .val{font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap;}
 .badge{display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap;}
@@ -1257,16 +1263,23 @@ function renderExchangeHistory_(rows){
 function renderRuns_(runs){
   const meIsParent = member_(S.me).role === '親';
   document.getElementById('runList').innerHTML = runs.map(function(r, i){
-    return '<div class="list-item col"><div class="list-head" onclick="toggle(\'run' + i + '\')"><div class="main">' +
-      '<div class="title">' + esc(r.routineName) + '</div><div class="sub">' + esc(r.date) + '・' + r.steps.length + 'こ</div></div>' +
-      '<div class="val ' + sign_(r.savedSec) + '">' + fmtSigned(r.savedSec) + '</div></div>' +
+    const allCanceled = r.activeCount === 0;
+    const label = esc(r.routineName) + '（' + esc(r.date) + '）';
+    const trash = meIsParent && !allCanceled
+      ? '<button class="btn tiny danger" title="この回をまるごと無効" onclick="event.stopPropagation(); cancelRun(\'' + r.runId + '\', \'\', \'' + label + '\')">🗑</button>' : '';
+    return '<div class="list-item col' + (allCanceled ? ' canceled' : '') + '"><div class="list-head" onclick="toggle(\'run' + i + '\')"><div class="main">' +
+      '<div class="title">' + esc(r.routineName) + (allCanceled ? ' <span class="badge gray">無効</span>' : '') + '</div>' +
+      '<div class="sub">' + esc(r.date) + '・' + r.steps.length + 'こ・タップで内訳</div></div>' +
+      '<div class="val ' + (allCanceled ? '' : sign_(r.savedSec)) + '">' + (allCanceled ? '—' : fmtSigned(r.savedSec)) + '</div>' + trash + '</div>' +
       '<div class="steps-mini hidden" id="run' + i + '">' + r.steps.map(function(s){
-        return '<div class="row"><span>' + (s.hidden ? '🙈 ' : '') + esc(s.name) + '</span><span class="num">' + fmtClock(s.actualSec) + ' / ' + fmtClock(s.targetSec) +
-          ' <b class="' + sign_(s.savedSec) + '">' + fmtSigned(s.savedSec) + '</b></span></div>' +
-          (s.reason ? '<div class="reason">理由：' + esc(s.reason) + '</div>' : '');
-      }).join('') +
-      (meIsParent ? '<div style="text-align:right;margin-top:6px"><button class="btn tiny danger" onclick="cancelRun(\'' + r.runId + '\')">この記録を取り消す</button></div>' : '') +
-      '</div></div>';
+        const del = meIsParent && !s.canceled
+          ? ' <button class="btn tiny danger step-del" title="この動作だけ無効" onclick="cancelRun(\'' + r.runId + '\', \'' + s.logId + '\', \'' + esc(s.name) + '\')">🗑</button>' : '';
+        return '<div class="row' + (s.canceled ? ' canceled' : '') + '"><span>' + (s.hidden ? '🙈 ' : '') + esc(s.name) + '</span><span class="num">' +
+          fmtClock(s.actualSec) + ' / ' + fmtClock(s.targetSec) +
+          ' <b class="' + (s.canceled ? '' : sign_(s.savedSec)) + '">' + fmtSigned(s.savedSec) + '</b>' + del + '</span></div>' +
+          (s.reason ? '<div class="reason">理由：' + esc(s.reason) + '</div>' : '') +
+          (s.canceled ? '<div class="reason">🚫 無効' + (s.cancelReason ? '：' + esc(s.cancelReason) : '') + '</div>' : '');
+      }).join('') + '</div></div>';
   }).join('') || '<p class="empty">まだ記録がありません</p>';
 }
 
@@ -1326,17 +1339,18 @@ async function decide(id, approve){
   });
 }
 
-async function cancelRun(runId){
+/** 怪しい記録を無効にする（親・PIN）。logId があればその動作だけ、空ならその回まるごと */
+async function cancelRun(runId, logId, label){
   const pin = await needPin();
   if (!pin) return;
   openModal({
-    title: 'この記録を取り消す？',
-    body: '<p class="muted">取り消すと、この回の貯金（プラスもマイナスも）がなかったことになります。</p>' +
-      '<div class="form"><label>理由<input type="text" id="crReason" maxlength="100" placeholder="例：押しまちがい"></label></div>',
-    ok: '取り消す',
+    title: (logId ? '「' + label + '」だけ' : label + ' をまるごと') + '無効にする？',
+    body: '<p class="muted">無効にすると、その分の貯金（プラスもマイナスも）がなかったことになります。記録は消えずに「無効」として残ります。</p>' +
+      '<div class="form"><label>理由<input type="text" id="crReason" maxlength="100" placeholder="例：早すぎてあやしい、押しまちがい"></label></div>',
+    ok: '無効にする',
     onOk: async function(){
       try{
-        const res = await gs('cancelRun', { token: S.token, actorId: S.me, pin: pin, runId: runId, reason: val('crReason') });
+        const res = await gs('cancelRun', { token: S.token, actorId: S.me, pin: pin, runId: runId, logId: logId || '', reason: val('crReason') });
         toast(res.message, 'ok');
         await refresh();
       }catch(err){ pinFailed_(err); throw err; }
