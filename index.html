@@ -384,16 +384,16 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
     </div>
 
     <div id="authRegister" class="hidden">
-      <p class="muted">家庭名とパスワードは家族で共有します。PINは親だけが知っている4けたの数字で、交換の承認や設定の変更に使います。</p>
+      <p class="muted" id="rg_intro">家庭名とパスワードは家族で共有します。PINは親だけが知っている4けたの数字で、交換の承認や設定の変更に使います。</p>
       <form class="form" onsubmit="doRegister(); return false;">
         <label>家庭名<input type="text" id="rg_family" placeholder="例：山田家"></label>
-        <label>パスワード（4文字以上）<input type="password" id="rg_password" autocomplete="new-password"></label>
+        <label id="rg_pwLabel">パスワード（4文字以上）<input type="password" id="rg_password" autocomplete="new-password"></label>
         <label>親の名前<input type="text" id="rg_parent" placeholder="例：お母さん"></label>
         <label>親のPIN（数字4けた）<input type="password" id="rg_pin" inputmode="numeric" maxlength="4" autocomplete="off"></label>
         <p class="error" id="rg_error"></p>
-        <button class="btn primary block" type="submit">登録してはじめる</button>
+        <button class="btn primary block" type="submit" id="rg_submit">登録してはじめる</button>
       </form>
-      <p class="muted auth-switch"><a href="#" onclick="showAuthMode('login'); return false;">ログインにもどる</a></p>
+      <p class="muted auth-switch" id="rg_back"><a href="#" onclick="showAuthMode('login'); return false;">ログインにもどる</a></p>
     </div>
   </div>
 </div>
@@ -512,12 +512,35 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
    GASのWebアプリとして開いたときは空のまま → google.script.run を使う */
 const API_URL = "https://script.google.com/macros/s/AKfycbwYVPlYAM3Xel3O8NP3bErPGCtzW9Mua5WtuWhOv6VHIaDDmb_oT354htcyXW-SFjgboQ/exec";
 
+/* Routine Bank Home（build-pwa.js --home）では、サーバーの処理（Code.gs）をこのページの中で動かす。
+   そのとき LOCAL_API が用意される。データはこのスマホの中だけに保存（ログイン・ネット不要） */
+const IS_LOCAL = typeof LOCAL_API !== 'undefined';
+
 /** サーバーの関数を呼ぶ（await で使える） */
 function gs(fnName){
   const args = Array.prototype.slice.call(arguments, 1);
+  if (IS_LOCAL) return gsLocal_(fnName, args);
   if (API_URL) return gsFetch_(fnName, args);
   return new Promise(function(resolve, reject){
     google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fnName].apply(null, args);
+  });
+}
+
+/* Home版：スマホの中の Code.gs を呼ぶ。成功したら保存、失敗したら途中の書き込みを取り消す。
+   JSONを通すのは、GASとの受け渡しと同じく「データだけ」をやりとりするため */
+function gsLocal_(fnName, args){
+  return new Promise(function(resolve, reject){
+    setTimeout(function(){
+      try{
+        if (!Object.prototype.hasOwnProperty.call(LOCAL_API, fnName)) throw new Error('不明な操作です: ' + fnName);
+        const result = LOCAL_API[fnName].apply(null, JSON.parse(JSON.stringify(args)));
+        LocalStore.flush();
+        resolve(result === undefined ? null : JSON.parse(JSON.stringify(result)));
+      }catch(err){
+        LocalStore.rollback();
+        reject(err);
+      }
+    }, 0);
   });
 }
 
@@ -585,6 +608,8 @@ window.addEventListener('load', boot);
 window.addEventListener('online', function(){ flushOutbox(); });
 
 async function boot(){
+  // Home版：ブラウザが勝手にデータを消さないようにお願いしておく（対応している機種だけ）
+  if (IS_LOCAL){ try{ if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){} }
   S.token = load_('rt_token', '');
   if (S.token){
     try{
@@ -604,7 +629,7 @@ async function boot(){
     }
   }
   show('loading', false);
-  showAuthMode('login');
+  showAuthMode(IS_LOCAL ? 'register' : 'login');
 }
 
 function showAuthMode(mode){
@@ -612,6 +637,14 @@ function showAuthMode(mode){
   startLogoClock_();
   show('authLogin', mode === 'login');
   show('authRegister', mode === 'register');
+  if (IS_LOCAL){
+    // Home版：家庭のパスワードはいらない（このスマホの中だけで使うため）
+    show('rg_pwLabel', false);
+    show('rg_back', false);
+    document.getElementById('rg_intro').textContent =
+      'このスマホ1台を家族で使います。登録もインターネットもいりません。PINは親だけが知っている4けたの数字で、交換の承認や設定の変更に使います。';
+    document.getElementById('rg_submit').textContent = 'はじめる';
+  }
 }
 
 async function doLogin(){
@@ -628,7 +661,8 @@ async function doRegister(){
   errEl.textContent = '';
   try{
     const res = await gs('registerFamily', {
-      familyName: val('rg_family'), password: val('rg_password'), parentName: val('rg_parent'), pin: val('rg_pin')
+      familyName: val('rg_family'), password: IS_LOCAL ? LocalStore.gas.Utilities.getUuid() : val('rg_password'),
+      parentName: val('rg_parent'), pin: val('rg_pin')
     });
     await onLoggedIn(res);
   }catch(err){ errEl.textContent = errText(err); }
@@ -1462,8 +1496,8 @@ function renderSettings(){
   const unlocked = isParent && S.parentPin && S.pinFor === S.me;
   let html = '<div class="card"><h2>この端末</h2><p>家庭：<b>' + esc(S.familyName) + '</b>　使う人：<b>' + esc(me.name) + '</b></p>' +
     '<div class="btn-row"><button class="btn" onclick="openWho()">使う人を変える</button>' +
-    '<button class="btn danger" onclick="logout()">ログアウト</button></div></div>' +
-    voiceCard_();
+    (IS_LOCAL ? '' : '<button class="btn danger" onclick="logout()">ログアウト</button>') + '</div></div>' +
+    voiceCard_() + (IS_LOCAL ? backupCard_() : '');
 
   if (!unlocked){
     const mine = S.routines.filter(function(r){ return r.createdBy === S.me; });
@@ -1547,6 +1581,55 @@ try{
     if (S.view === 'settings' && !document.getElementById('main').classList.contains('hidden')) renderSettings();
   });
 }catch(e){}
+
+/* ── Home版：データはスマホの中だけなので、バックアップの書き出し・読み込みを用意する ── */
+function backupCard_(){
+  return '<div class="card"><h2>データの保存（このスマホの中）</h2>' +
+    '<p class="muted">データはこのスマホの中だけにあります。機種変更やブラウザのデータ削除で消えてしまうので、ときどきバックアップを書き出してください。</p>' +
+    '<div class="btn-row"><button class="btn" onclick="exportBackup()">⬇ バックアップを書き出す</button>' +
+    '<label class="btn" style="display:inline-flex; align-items:center; cursor:pointer;">⬆ バックアップから戻す' +
+    '<input type="file" accept="application/json,.json" onchange="importBackup(this)" style="display:none"></label></div>' +
+    '<div style="margin-top:12px"><button class="btn danger" onclick="clearLocalData()">このスマホのデータを全部消す</button></div></div>';
+}
+
+function exportBackup(){
+  const text = LocalStore.exportAll({ token: S.token, familyName: S.familyName });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  a.download = 'RoutineBankHome_' + localDate_() + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 2000);
+  toast('バックアップを書き出しました（ダウンロードフォルダ）', 'ok');
+}
+
+async function importBackup(input){
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  if (!(await needPin())) return;   // 古いバックアップで貯金を戻す、などができないように親だけ
+  confirmModal('バックアップから戻す？', '今このスマホにあるデータは、バックアップの中身で上書きされます。', '戻す', async function(){
+    const text = await file.text();
+    const extra = LocalStore.importAll(text);
+    save_('rt_token', extra.token || null);
+    save_('rt_run', null);
+    save_('rt_outbox', null);
+    location.reload();
+  });
+}
+
+async function clearLocalData(){
+  const pin = await needPin();
+  if (!pin) return;
+  confirmModal('データを全部消す？', 'ルーチン・記録・貯金・メンバーがすべて消えて、最初の画面に戻ります。元に戻せません。', '全部消す', function(){
+    LocalStore.clearAll();
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++){ if (localStorage.key(i).indexOf('rt_') === 0) keys.push(localStorage.key(i)); }
+    keys.forEach(function(k){ localStorage.removeItem(k); });
+    location.reload();
+  });
+}
 
 async function unlockSettings(){
   if (await needPin()) renderSettings();

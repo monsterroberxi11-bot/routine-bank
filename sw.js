@@ -1,5 +1,5 @@
 /* Routine Bank Service Worker（build-pwa.js が自動生成。直接編集しない） */
-const CACHE = 'routine-bank-968ae32b9e';
+const CACHE = 'routine-bank-5208773236';
 const SHELL = ['./', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
@@ -8,12 +8,12 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys()
-    .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+    .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k.startsWith('routine-bank-') && !k.startsWith('routine-bank-home-')).map((k) => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 
 // 画面はまずネットから取りに行き（更新をすぐ反映）、圏外ならキャッシュを出す。
-// GASへのデータ通信（別サイト宛て）はキャッシュしない。
+// 別サイト宛ての通信（GASなど）はキャッシュしない。
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
