@@ -4061,6 +4061,39 @@ function toast(msg, kind){
 }
 function errText(err){ return (err && err.message) || String(err); }
 function toastErr(err){ toast(errText(err), 'err'); console.error(err); }
+
+/* ── Enterキーで決定 ──────────────────────────
+   ・確認の窓（#modal）が開いているとき：Enter で「OK（確定・保存など）」を押す
+   ・ふつうの画面：入力欄で Enter を押すと、同じ行・カードの中のメインのボタン（.primary か data-enter）を押す
+   押さないとき：改行したい欄（textarea）・日本語の変換中・ボタンの上（ボタン自身が押される）・
+   本物の <form> の中（ブラウザがもともと送信する）・近くにメインのボタンがないとき */
+document.addEventListener('keydown', function(e){
+  if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229 || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
+  const t = e.target;
+  const tag = t && t.tagName;
+  if (tag === 'TEXTAREA' || tag === 'BUTTON' || tag === 'A' || (t && t.isContentEditable)) return;
+  const textLike = tag === 'INPUT' && !/^(checkbox|radio|file|button|submit|reset|range|color|hidden)$/i.test(t.type);
+  const visible = function(el){ return !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'; };
+  const usable = function(el){ return visible(el) && !el.disabled; };
+
+  const modal = document.getElementById('modal');
+  if (modal && visible(modal) && !modal.classList.contains('hidden')){
+    if (modal.contains(t) && !(textLike || tag === 'SELECT')) return;
+    const ok = document.getElementById('modalOk');
+    if (usable(ok)){ e.preventDefault(); ok.click(); }
+    return;
+  }
+
+  if (!textLike) return;
+  const form = t.form;
+  if (form && form.querySelector('button[type="submit"], input[type="submit"]')) return;   // ブラウザにまかせる
+  const STOP = '.card, .gate-box, .modal-box, section, [data-enter-scope]';
+  for (let el = t.parentElement; el && el !== document.body; el = el.parentElement){
+    const btn = Array.prototype.filter.call(el.querySelectorAll('[data-enter], button.primary'), usable)[0];
+    if (btn){ e.preventDefault(); btn.click(); return; }
+    if (el.matches(STOP)) return;
+  }
+});
 </script>
 
 <script>
