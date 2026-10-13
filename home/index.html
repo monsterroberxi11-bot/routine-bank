@@ -2687,16 +2687,32 @@ async function restartRun(){
 function askParentPinOnce_(title, text){
   const parents = activeMembers_().filter(function(m){ return m.role === '親' && m.hasPin; });
   if (!parents.length) return Promise.resolve(true);
+  const bioParents = parents.filter(function(m){ return bioOf_(m.id); });
   return new Promise(function(resolve){
+    // このスマホで顔認証を登録している親が1人だけなら、まず顔認証を試す
+    if (bioParents.length === 1){
+      bioUnlock_(bioParents[0].id).then(function(pin){ if (pin) resolve(true); else openPinModal(); });
+    }else openPinModal();
+
+    function openPinModal(){
     openModal({
       title: title,
       body: '<p class="muted">' + esc(text) + '</p><div class="form">' +
         (parents.length > 1 ? '<label>だれのPIN？<select id="onceParent">' + parents.map(function(m){
           return '<option value="' + m.id + '"' + (m.id === S.me ? ' selected' : '') + '>' + esc(m.name) + '</option>';
         }).join('') + '</select></label>' : '') +
-        '<label>' + (parents.length > 1 ? '' : esc(parents[0].name) + 'の') + '親PIN（数字4けた）<input type="password" id="oncePin" inputmode="numeric" maxlength="4" autocomplete="new-password"></label></div>',
+        '<label>' + (parents.length > 1 ? '' : esc(parents[0].name) + 'の') + '親PIN（数字4けた）<input type="password" id="oncePin" inputmode="numeric" maxlength="4" autocomplete="new-password"></label></div>' +
+        (bioParents.length ? '<button type="button" class="btn block" id="bioBtn">🙂 顔認証で確認</button>' : ''),
       ok: 'OK',
-      onOpen: function(){ setTimeout(function(){ document.getElementById('oncePin').focus(); }, 50); },
+      onOpen: function(){
+        setTimeout(function(){ document.getElementById('oncePin').focus(); }, 50);
+        const b = document.getElementById('bioBtn');
+        if (b) b.onclick = function(){
+          const id = parents.length > 1 ? val('onceParent') : parents[0].id;
+          if (!bioOf_(id)) return toast('このスマホには ' + member_(id).name + ' の顔認証が登録されていません', 'err');
+          bioUnlock_(id).then(function(pin){ if (pin){ show('modal', false); resolve(true); } });
+        };
+      },
       onOk: async function(){
         const actorId = parents.length > 1 ? val('onceParent') : parents[0].id;
         await gs('verifyParentPin', { token: S.token, actorId: actorId, pin: val('oncePin') });
@@ -2704,6 +2720,7 @@ function askParentPinOnce_(title, text){
       },
       onCancel: function(){ resolve(false); }
     });
+    }
   });
 }
 
@@ -3103,7 +3120,7 @@ function renderSettings(){
     '<div class="btn-row"><button class="btn" onclick="openWho()">使う人を変える</button>' +
     (IS_LOCAL ? '' : '<button class="btn danger" onclick="logout()">ログアウト</button>') + '</div></div>' +
     '<div class="card"><h2>使い方</h2><button class="btn" onclick="startTour()">📖 使い方をもう一度見る</button></div>' +
-    voiceCard_() + (IS_LOCAL ? backupCard_() : '');
+    bioCard_() + voiceCard_() + (IS_LOCAL ? backupCard_() : '');
 
   if (isParent){
     const reqs = routineRequests_();
@@ -3300,20 +3317,119 @@ function askPin_(memberId){
   if (!m.hasPin) return Promise.resolve('-');   // PIN未設定の親（通常は起きない）はそのまま通す
   if (S.parentPin && S.pinFor === memberId) return Promise.resolve(S.parentPin);
   return new Promise(function(resolve){
-    openModal({
-      title: '🔒 ' + m.name + 'のPIN',
-      body: '<div class="form"><label>数字4けた<input type="password" id="pinInput" inputmode="numeric" maxlength="4" autocomplete="new-password"></label></div>',
-      ok: 'OK',
-      onOpen: function(){ setTimeout(function(){ document.getElementById('pinInput').focus(); }, 50); },
-      onOk: async function(){
-        const pin = val('pinInput');
-        await gs('verifyParentPin', { token: S.token, actorId: memberId, pin: pin });
-        S.parentPin = pin;
-        S.pinFor = memberId;
-        resolve(pin);
-      },
-      onCancel: function(){ resolve(''); }
-    });
+    const done = function(pin){ S.parentPin = pin; S.pinFor = memberId; resolve(pin); };
+    const openPinModal = function(){
+      openModal({
+        title: '🔒 ' + m.name + 'のPIN',
+        body: '<div class="form"><label>数字4けた<input type="password" id="pinInput" inputmode="numeric" maxlength="4" autocomplete="new-password"></label></div>' +
+          (bioOf_(memberId) ? '<button type="button" class="btn block" id="bioBtn">🙂 顔認証で開く</button>' : ''),
+        ok: 'OK',
+        onOpen: function(){
+          setTimeout(function(){ document.getElementById('pinInput').focus(); }, 50);
+          const b = document.getElementById('bioBtn');
+          if (b) b.onclick = function(){
+            bioUnlock_(memberId).then(function(pin){ if (pin){ show('modal', false); done(pin); } });
+          };
+        },
+        onOk: async function(){
+          const pin = val('pinInput');
+          await gs('verifyParentPin', { token: S.token, actorId: memberId, pin: pin });
+          done(pin);
+        },
+        onCancel: function(){ resolve(''); }
+      });
+    };
+    // 顔認証を登録していれば先に試す。やめた・失敗したらPINの窓
+    if (bioOf_(memberId)) bioUnlock_(memberId).then(function(pin){ if (pin) done(pin); else openPinModal(); });
+    else openPinModal();
+  });
+}
+
+/* ── 顔認証（パスキー）────────────────────────
+   スマホの顔認証・指紋（合わないときはスマホの画面ロック）で本人確認して、
+   このスマホに覚えておいたPINを使う。サーバーには今までどおりPINを送るので、サーバー側は変えていない。
+   登録はスマホごと・親ごと。PINが変わっていたら登録を消してPINを聞く。 */
+
+function bioKey_(memberId){ return 'rt_bio_' + (IS_LOCAL ? 'home_' : '') + S.familyName + '_' + memberId; }
+function bioOf_(memberId){ return window.PublicKeyCredential ? load_(bioKey_(memberId), null) : null; }
+
+function randBytes_(n){ return crypto.getRandomValues(new Uint8Array(n)); }
+function b64uEnc_(buf){
+  return btoa(String.fromCharCode.apply(null, new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function b64uDec_(str){
+  const bin = atob(str.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(bin, function(c){ return c.charCodeAt(0); });
+}
+
+/** 顔認証してPINを返す。やめた・失敗したら '' */
+async function bioUnlock_(memberId){
+  const b = bioOf_(memberId);
+  if (!b) return '';
+  try{
+    await navigator.credentials.get({ publicKey: {
+      challenge: randBytes_(32), allowCredentials: [{ type: 'public-key', id: b64uDec_(b.credId) }],
+      userVerification: 'required', timeout: 60000 } });
+  }catch(e){ return ''; }   // やめた・顔が合わない・ボタンを押さずに呼ばれた（iPhone）など → PINへ
+  try{
+    await gs('verifyParentPin', { token: S.token, actorId: memberId, pin: b.pin });
+    return b.pin;
+  }catch(err){
+    if (/PIN/.test(errText(err))){
+      save_(bioKey_(memberId), null);
+      toast('PINが変わっていたので、顔認証をオフにしました。PINを入れてください（設定からまたオンにできます）', 'err');
+    }else toastErr(err);
+    return '';
+  }
+}
+
+function bioCard_(){
+  const me = member_(S.me);
+  if (!window.PublicKeyCredential || !navigator.credentials || me.role !== '親' || !me.hasPin) return '';
+  const on = !!bioOf_(S.me);
+  return '<div class="card"><h2>🙂 顔認証（このスマホ）</h2><p class="muted">' +
+    (on ? '<b>オン</b>：PINを聞かれたとき、先に顔認証（または指紋）で開けます。'
+        : 'オンにすると、PINの代わりに顔認証（または指紋）で開けます。このスマホの' + esc(me.name) + 'だけの設定です。') +
+    ' 顔が合わないときはスマホの画面ロックの番号でも通るので、子どもがロックの番号を知っているスマホではオンにしないでください。</p>' +
+    (on ? '<button class="btn" onclick="bioOff()">オフにする</button>' : '<button class="btn primary" onclick="bioSetup()">オンにする</button>') + '</div>';
+}
+
+async function bioSetup(){
+  let can = false;
+  try{ can = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); }catch(e){}
+  if (!can) return toast('このスマホ（ブラウザ）では顔認証・指紋が使えません', 'err');
+  const pin = await needPin();   // まず今のPINで本人確認
+  if (!pin || pin === '-') return;
+  const me = member_(S.me);
+  // 顔認証の画面はボタンを押した直後にしか出せない（iPhone）ので、もう1回押してもらう
+  openModal({
+    title: '🙂 顔認証をオンにする',
+    body: '<p>「登録する」を押すと、スマホの顔認証（または指紋）の画面が出ます。</p>',
+    ok: '登録する',
+    onOk: async function(){
+      let cred;
+      try{
+        cred = await navigator.credentials.create({ publicKey: {
+          challenge: randBytes_(32),
+          rp: { name: 'Routine Bank' },
+          user: { id: randBytes_(16), name: S.familyName + ' ' + me.name, displayName: me.name + '（Routine Bank）' },
+          pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+          authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
+          attestation: 'none', timeout: 60000 } });
+      }catch(e){
+        throw new Error(e && e.name === 'NotAllowedError' ? '登録をやめたか、時間切れになりました' : '登録できませんでした：' + errText(e));
+      }
+      save_(bioKey_(S.me), { credId: b64uEnc_(cred.rawId), pin: pin });
+      toast('顔認証をオンにしました', 'ok');
+      renderSettings();
+    }
+  });
+}
+
+function bioOff(){
+  confirmModal('顔認証をオフにする？', 'このスマホでは、またPINを入れるようになります。', 'オフにする', function(){
+    save_(bioKey_(S.me), null);
+    renderSettings();
   });
 }
 
@@ -3442,6 +3558,8 @@ function editMember(id){
       await saveSetting_('saveMember', { memberId: m.id, name: val('mbName'), role: val('mbRole'), newPin: newPin,
         order: Number(val('mbOrder')), active: document.getElementById('mbActive').checked });
       if (newPin && m.id === S.me){ S.parentPin = newPin; S.pinFor = S.me; }   // 自分のPINを変えたら覚え直す
+      const bio = newPin && bioOf_(m.id);
+      if (bio){ bio.pin = newPin; save_(bioKey_(m.id), bio); }               // 顔認証で使うPINも新しくする
     }
   });
 }
