@@ -1,5 +1,5 @@
 /* RB 管理者パネル Service Worker（build-pwa.js が自動生成。直接編集しない） */
-const CACHE = 'routine-bank-admin-25c2e7a6b2';
+const CACHE = 'routine-bank-admin-0a987aeed4';
 const SHELL = ['./', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {

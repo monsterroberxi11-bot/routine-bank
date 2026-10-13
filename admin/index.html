@@ -508,6 +508,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
   <section id="view-bank" class="view hidden">
     <div class="member-seg" id="bankMembers"></div>
     <div id="bankSummary"></div>
+    <div class="card" id="interestCard"></div>
     <div class="card">
       <h2>交換する</h2>
       <div id="rewardList" class="tile-grid"></div>
@@ -811,6 +812,7 @@ async function loadBootstrap(){
   S.routines = b.routines;
   S.rewards = b.rewards;
   S.balances = b.balances;
+  S.interest = b.interest || { rate: 0, preview: {}, history: [] };
   S.pendingCount = b.pendingCount;
   S.today = b.today;
 }
@@ -1518,6 +1520,8 @@ async function renderBank(){
       '<div class="stat"><div class="k">使える</div><div class="v">' + Math.max(0, Math.floor(b.balanceSec / 60)) + '分</div></div>' +
     '</div>';
 
+  renderInterest_(m);
+
   const canUse = m.id === S.me && b.balanceSec >= 60;
   document.getElementById('rewardList').innerHTML = S.rewards.filter(function(w){ return w.active; }).map(function(w){
     return '<button class="tile" ' + (canUse ? '' : 'disabled') + ' onclick="openExchange(\'' + w.id + '\')">' +
@@ -1541,6 +1545,29 @@ async function renderBank(){
 }
 
 function pickBankMember(id){ S.bankMember = id; renderBank(); }
+
+/** 利息のカード：しくみ・今週の見込み・これまでの利息（通帳のように1週1行） */
+function renderInterest_(m){
+  const it = S.interest;
+  const pv = it.preview[m.id] || { minSec: 0, previewSec: 0 };
+  const rows = it.history.filter(function(h){ return h.memberId === m.id; }).slice(0, 8);
+  document.getElementById('interestCard').innerHTML = '<h2>🏦 利息</h2>' + (it.rate
+    ? '<p class="muted">毎週月曜日に、先週<b>いちばん少なかったときの残高</b>の <b>' + fmtNum(it.rate) + '％</b> が利息として付きます。使わずに貯めておくほど増えます。</p>' +
+      '<div class="stat-row"><div class="stat"><div class="k">今週の見込み</div><div class="v plus">+' + fmtDur(pv.previewSec) + '</div></div>' +
+      '<div class="stat"><div class="k">今週いちばん少なかった残高</div><div class="v">' + fmtDur(pv.minSec) + '</div></div></div>'
+    : '<p class="muted">今は利息がお休みです（親が設定で利率を決められます）。</p>') +
+    (rows.length ? '<div class="list">' + rows.map(function(h){
+      return '<div class="list-item"><div class="main"><div class="title">' + esc(fmtWeek_(h.week)) + 'の利息</div>' +
+        '<div class="sub">' + fmtDur(h.baseSec) + ' × ' + fmtNum(h.rate) + '％</div></div><div class="val plus">+' + fmtDur(h.sec) + '</div></div>';
+    }).join('') + '</div>' : '');
+}
+
+/** '2026-10-12' → '10/12〜10/18' */
+function fmtWeek_(week){
+  const d = new Date(week + 'T00:00:00');
+  const e = new Date(d.getTime() + 6 * 86400000);
+  return (d.getMonth() + 1) + '/' + d.getDate() + '〜' + (e.getMonth() + 1) + '/' + e.getDate();
+}
 
 function renderPending_(rows){
   const meIsParent = member_(S.me).role === '親';
@@ -1762,6 +1789,10 @@ function renderSettings(){
           (m.active ? '' : ' <span class="badge gray">停止中</span>') + '</div></div>' +
           '<div class="actions"><button class="btn tiny" onclick="editMember(\'' + m.id + '\')">編集</button></div></div>';
       }).join('') + '</div></div>';
+
+    html += '<div class="card"><h2>🏦 利息（週の利率）</h2><p class="muted">毎週、先週いちばん少なかった残高にこの％の利息が付きます。0にすると利息はお休みです（0〜10％）。</p>' +
+      '<div class="form"><label>週の利率（％）<input type="number" id="irRate" min="0" max="10" step="0.1" inputmode="decimal" value="' + S.interest.rate + '"></label></div>' +
+      '<button class="btn primary" onclick="saveInterestRate()">保存</button></div>';
 
     html += '<div class="card"><h2>家庭のパスワード</h2><button class="btn" onclick="changePassword()">パスワードを変える</button></div>';
   }
@@ -2173,6 +2204,10 @@ function editMember(id){
   });
 }
 
+function saveInterestRate(){
+  saveSetting_('setInterestRate', { rate: Number(val('irRate')) }).catch(function(){});
+}
+
 function changePassword(){
   openModal({
     title: '家庭のパスワードを変える',
@@ -2222,7 +2257,7 @@ function tourStepsFor_(parent){
       text: '実行画面では「一時停止」「とばす」のほかに、「今日の順番」で今日だけ動作の順番を変えられます。「最初から」でやり直すには親のPINが必要です。' },
     { el: tourTab_('bank'), title: '🎮 貯金を交換する',
       text: parent ? '子どもの交換申請（ゲーム時間など）はここに届きます。承認すると貯金から引かれます。'
-                   : '貯めた時間は、ゲーム時間などと交換できます。交換するには親の承認が必要です。' },
+                   : '貯めた時間は、ゲーム時間などと交換できます。交換するには親の承認が必要です。使わずに貯めておくと、毎週少しずつ利息も付きます。' },
     { el: tourTab_('analysis'), title: '📊 分析',
       text: 'オーバーした理由や、残り時間あり／なしでどっちが早いかが見られます。' },
     { el: tourTab_('settings'), title: '⚙️ 設定',

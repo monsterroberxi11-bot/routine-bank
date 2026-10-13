@@ -508,6 +508,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
   <section id="view-bank" class="view hidden">
     <div class="member-seg" id="bankMembers"></div>
     <div id="bankSummary"></div>
+    <div class="card" id="interestCard"></div>
     <div class="card">
       <h2>交換する</h2>
       <div id="rewardList" class="tile-grid"></div>
@@ -887,9 +888,11 @@ const SHEET_RUNLOG   = '実行記録';
 const SHEET_EXCHANGE = '交換申請';
 const SHEET_ERRORLOG = 'エラーログ';
 const SHEET_FEEDBACK = '要望';
+const SHEET_INTEREST = '利息';
 
 // ── 各シートの見出し（列を増やすときは必ず末尾に足す）───────────────
-const HEAD_FAMILY   = ['家庭ID', '家庭名', 'パスワードハッシュ', 'ソルト', '作成日時'];
+// 週の利率：時間貯金に毎週付ける利息の％（空なら INTEREST_DEFAULT_RATE。0なら利息はお休み）
+const HEAD_FAMILY   = ['家庭ID', '家庭名', 'パスワードハッシュ', 'ソルト', '作成日時', '週の利率'];
 const HEAD_SESSION  = ['トークン', '家庭ID', '発行日時', '状態'];
 const HEAD_MEMBER   = ['メンバーID', '家庭ID', '名前', '役割', '表示順', '有効', 'PINハッシュ', 'PINソルト'];
 // 対象メンバーID：空なら家族の誰でも使えるルーチン
@@ -919,6 +922,13 @@ const HEAD_ERRORLOG = ['日時', '家庭ID', '関数名', 'エラー内容', '�
 // 【管理者削除】＝開発者が管理者パネルから消した日時。パネルに出なくなるだけで、利用者のチャットには残る
 const HEAD_FEEDBACK = ['メッセージID', '日時', 'スレッドID', 'アプリ', '家庭名', '名前', '内容', '返信', '状態', '送信者', '取り消し', '管理者削除'];
 const FB_FROM_DEV = '開発者';
+// 利息。1行＝1人の1週間分（週の開始＝月曜日）。もとの残高秒＝その週でいちばん少なかった残高（マイナスなら0）。
+// 利息が0秒の週も「計算ずみ」の印として残す（あとで利率を上げても、過去の週にさかのぼって付けないため）
+const HEAD_INTEREST = ['利息ID', '家庭ID', 'メンバーID', 'メンバー名', '週の開始', 'もとの残高秒', '利率', '利息秒', '付けた日時'];
+const INTEREST_START_WEEK = '2026-10-12';   // この週から利息を付ける（それより前の週にはさかのぼらない）
+const INTEREST_DEFAULT_RATE = 1;            // ％／週
+const INTEREST_MAX_RATE = 10;
+const INTEREST_MAX_WEEKS = 12;              // 久しぶりに開いたときも、さかのぼるのは12週まで
 // 開発者キーのSHA-256（キーそのものは書かない。Home版ではこのファイルが公開されるため）
 const ADMIN_KEY_HASH = '4ad58dc7dfe88d627960e686cf6a9b8d9799832e336138248ccd9e87e68b7946';
 
@@ -926,10 +936,10 @@ const ALL_SHEETS = [
   [SHEET_FAMILY, HEAD_FAMILY], [SHEET_SESSION, HEAD_SESSION], [SHEET_MEMBER, HEAD_MEMBER],
   [SHEET_ROUTINE, HEAD_ROUTINE], [SHEET_STEP, HEAD_STEP], [SHEET_REWARD, HEAD_REWARD],
   [SHEET_RUNLOG, HEAD_RUNLOG], [SHEET_EXCHANGE, HEAD_EXCHANGE], [SHEET_ERRORLOG, HEAD_ERRORLOG],
-  [SHEET_FEEDBACK, HEAD_FEEDBACK]
+  [SHEET_FEEDBACK, HEAD_FEEDBACK], [SHEET_INTEREST, HEAD_INTEREST]
 ];
 // 見出しを変えたらこの番号を上げる → 次の呼び出しで自動的にシートが整う
-const SCHEMA_VERSION = '7';
+const SCHEMA_VERSION = '8';
 
 // ── 状態 ────────────────────────────────
 const ROLE_PARENT = '親';
@@ -974,7 +984,7 @@ const API_FUNCTIONS = {
   saveReward: saveReward, changeFamilyPassword: changeFamilyPassword,
   sendFeedback: sendFeedback, getFeedbackThread: getFeedbackThread, unsendFeedback: unsendFeedback,
   adminListThreads: adminListThreads, adminGetThread: adminGetThread, adminReply: adminReply,
-  adminDeleteThread: adminDeleteThread
+  adminDeleteThread: adminDeleteThread, setInterestRate: setInterestRate
 };
 
 function doPost(e) {
@@ -1398,7 +1408,135 @@ function getBalances_(familyId) {
     b.balanceSec -= num_(r['使う秒']);
     if (r['状態'] === EX_PENDING) b.pendingSec += num_(r['使う秒']);
   });
+  readFamily_(SHEET_INTEREST, familyId).forEach(function (r) {
+    const sec = num_(r['利息秒']);
+    if (!sec) return;
+    const b = slot(r['メンバーID']);
+    const day = addDaysStr_(r['週の開始'], 6);   // その週の日曜日に付いた扱い
+    b.balanceSec += sec;
+    if (day >= weekStart) b.weekSec += sec;
+    if (day >= monthStart) b.monthSec += sec;
+  });
   return out;
+}
+
+
+/* ── 利息 ──────────────────────────────
+   本物の銀行のように、貯金しておくと毎週少しずつ増える。
+   「その週でいちばん少なかった残高」に付けるので、週の終わりの直前に貯めても利息は増えない。
+   毎週の計算は、起動したとき（getBootstrap）にまだ計算していない週をまとめて行う（トリガー不要・Offline版でも動く） */
+
+function familyRow_(familyId) {
+  return readSheet_(SHEET_FAMILY).filter(function (r) { return r['家庭ID'] === familyId; })[0];
+}
+
+function interestRate_(family) {
+  const v = String((family && family['週の利率']) || '').trim();
+  return v === '' ? INTEREST_DEFAULT_RATE : Math.min(INTEREST_MAX_RATE, Math.max(0, num_(v)));
+}
+
+/** メンバーごとの「残高が動いた時刻と秒数」の一覧（古い順） */
+function balanceEvents_(familyId) {
+  const out = {};
+  function add(id, at, sec) { if (at && sec) (out[id] = out[id] || []).push({ at: at, sec: sec }); }
+  readFamily_(SHEET_RUNLOG, familyId).forEach(function (r) {
+    if (r['状態'] === ST_ACTIVE) add(r['メンバーID'], r['記録日時'], num_(r['貯金秒']));
+  });
+  readFamily_(SHEET_EXCHANGE, familyId).forEach(function (r) {
+    const sec = num_(r['使う秒']);
+    if (exchangeHolds_(r['状態'])) add(r['メンバーID'], r['申請日時'], -sec);
+    else if (r['処理日時']) { add(r['メンバーID'], r['申請日時'], -sec); add(r['メンバーID'], r['処理日時'], sec); }   // 却下・取消は戻るまでの間だけ引く
+  });
+  readFamily_(SHEET_INTEREST, familyId).forEach(function (r) {
+    add(r['メンバーID'], addDaysStr_(r['週の開始'], 6) + ' 23:59:59', num_(r['利息秒']));
+  });
+  Object.keys(out).forEach(function (id) { out[id].sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : 0; }); });
+  return out;
+}
+
+/** その週（月曜0時〜次の月曜0時、ただし untilAt まで）でいちばん少なかった残高（マイナスなら0） */
+function weekMinSec_(events, weekStart, untilAt) {
+  const from = weekStart + ' 00:00:00';
+  const to = untilAt || addDaysStr_(weekStart, 7) + ' 00:00:00';
+  let bal = 0;
+  let min = null;
+  (events || []).forEach(function (e) {
+    if (e.at < from) { bal += e.sec; return; }
+    if (min === null) min = bal;
+    if (e.at >= to) return;
+    bal += e.sec;
+    min = Math.min(min, bal);
+  });
+  return Math.max(0, min === null ? bal : min);
+}
+
+/** まだ利息を計算していない週（先週まで）をまとめて計算して、【利息】に追記する */
+function creditInterest_(familyId) {
+  const lastWeek = addDaysStr_(weekStartStr_(todayStr_()), -7);
+  function pending(rows, family) {
+    const done = {};
+    rows.forEach(function (r) { done[r['メンバーID'] + '|' + r['週の開始']] = true; });
+    const created = weekStartStr_(String(family['作成日時'] || INTEREST_START_WEEK).slice(0, 10));
+    let first = [INTEREST_START_WEEK, created, addDaysStr_(lastWeek, -7 * (INTEREST_MAX_WEEKS - 1))].sort()[2];
+    const todo = [];
+    getMembers_(familyId).forEach(function (m) {
+      if (!m.active) return;
+      for (let w = first; w <= lastWeek; w = addDaysStr_(w, 7)) if (!done[m.id + '|' + w]) todo.push({ m: m, week: w });
+    });
+    return todo;
+  }
+  const family = familyRow_(familyId);
+  if (!family || !pending(readFamily_(SHEET_INTEREST, familyId), family).length) return;
+  withLock_(function () {
+    const todo = pending(readFamily_(SHEET_INTEREST, familyId), family);   // ロックの中でもう一度（同時に開いたとき二重に付けない）
+    if (!todo.length) return;
+    const rate = interestRate_(family);
+    const events = balanceEvents_(familyId);
+    let n = num_(nextId_(SHEET_INTEREST, 'I').slice(1));
+    const now = nowStr_();
+    const rows = [];
+    todo.sort(function (a, b) { return a.week < b.week ? -1 : 1; }).forEach(function (t) {
+      const base = weekMinSec_(events[t.m.id], t.week);
+      const sec = Math.floor(base * rate / 100);
+      rows.push({ '利息ID': 'I' + ('00000' + n++).slice(-5), '家庭ID': familyId, 'メンバーID': t.m.id, 'メンバー名': t.m.name,
+                  '週の開始': t.week, 'もとの残高秒': base, '利率': rate, '利息秒': sec, '付けた日時': now });
+      // 次の週の計算に、この利息も入れる
+      if (sec) (events[t.m.id] = events[t.m.id] || []).push({ at: addDaysStr_(t.week, 6) + ' 23:59:59', sec: sec });
+      if (events[t.m.id]) events[t.m.id].sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : 0; });
+    });
+    appendRows_(SHEET_INTEREST, HEAD_INTEREST, rows);
+  });
+}
+
+/** 画面用：利率・今週の見込み・これまでの利息（新しい順） */
+function interestInfo_(familyId) {
+  const rate = interestRate_(familyRow_(familyId));
+  const events = balanceEvents_(familyId);
+  const week = weekStartStr_(todayStr_());
+  const preview = {};
+  getMembers_(familyId).forEach(function (m) {
+    const min = weekMinSec_(events[m.id], week, nowStr_());
+    preview[m.id] = { minSec: min, previewSec: Math.floor(min * rate / 100) };
+  });
+  const history = readFamily_(SHEET_INTEREST, familyId).filter(function (r) { return num_(r['利息秒']) > 0; }).reverse().slice(0, 60)
+    .map(function (r) {
+      return { memberId: r['メンバーID'], week: r['週の開始'], baseSec: num_(r['もとの残高秒']), rate: num_(r['利率']), sec: num_(r['利息秒']) };
+    });
+  return { rate: rate, preview: preview, history: history };
+}
+
+/** 親が週の利率を変える。args = {token, actorId, pin, rate} */
+function setInterestRate(args) {
+  return guarded_('setInterestRate', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    requireParentPin_(sess.familyId, args.actorId, args.pin);
+    const rate = Number(args.rate);
+    if (!isFinite(rate) || rate < 0 || rate > INTEREST_MAX_RATE) throw new Error('利率は0〜' + INTEREST_MAX_RATE + '％にしてください');
+    return withLock_(function () {
+      updateRow_(SHEET_FAMILY, HEAD_FAMILY, familyRow_(sess.familyId)._row, { '週の利率': Math.round(rate * 10) / 10 });
+      return { message: rate ? '週の利率を ' + (Math.round(rate * 10) / 10) + '％ にしました' : '利息をお休みにしました' };
+    });
+  });
 }
 
 function balanceOf_(familyId, memberId) {
@@ -1410,6 +1548,7 @@ function balanceOf_(familyId, memberId) {
 function getBootstrap(token) {
   return guarded_('getBootstrap', function (setFamily) {
     const sess = session_(token, setFamily);
+    creditInterest_(sess.familyId);
     const pendingCount = readFamily_(SHEET_EXCHANGE, sess.familyId)
       .filter(function (r) { return r['状態'] === EX_PENDING; }).length;
     return {
@@ -1418,6 +1557,7 @@ function getBootstrap(token) {
       routines: getRoutines_(sess.familyId),
       rewards: getRewards_(sess.familyId),
       balances: getBalances_(sess.familyId),
+      interest: interestInfo_(sess.familyId),
       pendingCount: pendingCount,
       today: todayStr_()
     };
@@ -2202,6 +2342,7 @@ async function loadBootstrap(){
   S.routines = b.routines;
   S.rewards = b.rewards;
   S.balances = b.balances;
+  S.interest = b.interest || { rate: 0, preview: {}, history: [] };
   S.pendingCount = b.pendingCount;
   S.today = b.today;
 }
@@ -2909,6 +3050,8 @@ async function renderBank(){
       '<div class="stat"><div class="k">使える</div><div class="v">' + Math.max(0, Math.floor(b.balanceSec / 60)) + '分</div></div>' +
     '</div>';
 
+  renderInterest_(m);
+
   const canUse = m.id === S.me && b.balanceSec >= 60;
   document.getElementById('rewardList').innerHTML = S.rewards.filter(function(w){ return w.active; }).map(function(w){
     return '<button class="tile" ' + (canUse ? '' : 'disabled') + ' onclick="openExchange(\'' + w.id + '\')">' +
@@ -2932,6 +3075,29 @@ async function renderBank(){
 }
 
 function pickBankMember(id){ S.bankMember = id; renderBank(); }
+
+/** 利息のカード：しくみ・今週の見込み・これまでの利息（通帳のように1週1行） */
+function renderInterest_(m){
+  const it = S.interest;
+  const pv = it.preview[m.id] || { minSec: 0, previewSec: 0 };
+  const rows = it.history.filter(function(h){ return h.memberId === m.id; }).slice(0, 8);
+  document.getElementById('interestCard').innerHTML = '<h2>🏦 利息</h2>' + (it.rate
+    ? '<p class="muted">毎週月曜日に、先週<b>いちばん少なかったときの残高</b>の <b>' + fmtNum(it.rate) + '％</b> が利息として付きます。使わずに貯めておくほど増えます。</p>' +
+      '<div class="stat-row"><div class="stat"><div class="k">今週の見込み</div><div class="v plus">+' + fmtDur(pv.previewSec) + '</div></div>' +
+      '<div class="stat"><div class="k">今週いちばん少なかった残高</div><div class="v">' + fmtDur(pv.minSec) + '</div></div></div>'
+    : '<p class="muted">今は利息がお休みです（親が設定で利率を決められます）。</p>') +
+    (rows.length ? '<div class="list">' + rows.map(function(h){
+      return '<div class="list-item"><div class="main"><div class="title">' + esc(fmtWeek_(h.week)) + 'の利息</div>' +
+        '<div class="sub">' + fmtDur(h.baseSec) + ' × ' + fmtNum(h.rate) + '％</div></div><div class="val plus">+' + fmtDur(h.sec) + '</div></div>';
+    }).join('') + '</div>' : '');
+}
+
+/** '2026-10-12' → '10/12〜10/18' */
+function fmtWeek_(week){
+  const d = new Date(week + 'T00:00:00');
+  const e = new Date(d.getTime() + 6 * 86400000);
+  return (d.getMonth() + 1) + '/' + d.getDate() + '〜' + (e.getMonth() + 1) + '/' + e.getDate();
+}
 
 function renderPending_(rows){
   const meIsParent = member_(S.me).role === '親';
@@ -3153,6 +3319,10 @@ function renderSettings(){
           (m.active ? '' : ' <span class="badge gray">停止中</span>') + '</div></div>' +
           '<div class="actions"><button class="btn tiny" onclick="editMember(\'' + m.id + '\')">編集</button></div></div>';
       }).join('') + '</div></div>';
+
+    html += '<div class="card"><h2>🏦 利息（週の利率）</h2><p class="muted">毎週、先週いちばん少なかった残高にこの％の利息が付きます。0にすると利息はお休みです（0〜10％）。</p>' +
+      '<div class="form"><label>週の利率（％）<input type="number" id="irRate" min="0" max="10" step="0.1" inputmode="decimal" value="' + S.interest.rate + '"></label></div>' +
+      '<button class="btn primary" onclick="saveInterestRate()">保存</button></div>';
 
     html += '<div class="card"><h2>家庭のパスワード</h2><button class="btn" onclick="changePassword()">パスワードを変える</button></div>';
   }
@@ -3564,6 +3734,10 @@ function editMember(id){
   });
 }
 
+function saveInterestRate(){
+  saveSetting_('setInterestRate', { rate: Number(val('irRate')) }).catch(function(){});
+}
+
 function changePassword(){
   openModal({
     title: '家庭のパスワードを変える',
@@ -3613,7 +3787,7 @@ function tourStepsFor_(parent){
       text: '実行画面では「一時停止」「とばす」のほかに、「今日の順番」で今日だけ動作の順番を変えられます。「最初から」でやり直すには親のPINが必要です。' },
     { el: tourTab_('bank'), title: '🎮 貯金を交換する',
       text: parent ? '子どもの交換申請（ゲーム時間など）はここに届きます。承認すると貯金から引かれます。'
-                   : '貯めた時間は、ゲーム時間などと交換できます。交換するには親の承認が必要です。' },
+                   : '貯めた時間は、ゲーム時間などと交換できます。交換するには親の承認が必要です。使わずに貯めておくと、毎週少しずつ利息も付きます。' },
     { el: tourTab_('analysis'), title: '📊 分析',
       text: 'オーバーした理由や、残り時間あり／なしでどっちが早いかが見られます。' },
     { el: tourTab_('settings'), title: '⚙️ 設定',
