@@ -3416,9 +3416,36 @@ function atmTakeCard(){
 
 function atmGo(mode){
   clearTimeout(atmTimer);
+  const changed = ATM.mode !== mode;
   ATM.mode = mode;
   if (mode === 'menu'){ ATM.kind = ''; ATM.digits = ''; ATM.all = false; ATM.pin = ''; ATM.newPin = ''; ATM.pinOk = ''; }
   renderGinko();
+  if (changed || mode === 'menu') speak(atmGuide_(mode));
+}
+
+/** 画面ごとの読み上げ。暗証番号の数字と残高の金額は読まない（まわりの人に聞こえてしまうので） */
+function atmGuide_(mode){
+  const isIn = ATM.kind === 'in';
+  switch (mode){
+    case 'menu':    return 'いらっしゃいませ。お取引を選んでください';
+    case 'card':    return 'キャッシュカードを入れています';
+    case 'pin':     return '暗証番号を入力してください';
+    case 'pinSet1': return '暗証番号を決めて、入力してください';
+    case 'pinSet2': return '確認のため、もう一度入力してください';
+    case 'locked':  return 'このカードはロックされています。親に解除してもらってください';
+    case 'amount':  return (isIn ? '預け入れる' : '引き出す') + '時間を入力して、分か、秒を押してください';
+    case 'confirm': return (ATM.all ? '全部' : ATM.digits + (ATM.unit === 'sec' ? '秒' : '分')) + 'を' + (isIn ? '預け入れます' : '引き出します') + '。よろしければ、はいを押してください';
+    case 'eject':   return 'カードをお取りください';
+    case 'thanks':  return 'ご利用ありがとうございました';
+    case 'balance': return '残高を表示しています';
+  }
+  return '';
+}
+
+/** ATMのまちがい：お知らせを出して、読み上げる */
+function atmErr_(msg){
+  toast(msg, 'err');
+  speak(msg.replace(/（.*?）/g, ''));
 }
 
 /** メニューのボタン → カードを入れる動き → 暗証番号（まだなければ決める） */
@@ -3467,13 +3494,13 @@ function atmAfterPin_(pin){
 
 async function atmPinOk(){
   if (ATM.busy) return;
-  if (ATM.pin.length !== 4) return toast('4けたで入れてください', 'err');
+  if (ATM.pin.length !== 4) return atmErr_('4けたで入れてください');
   const me = member_(S.me);
   if (ATM.mode === 'pinSet1'){ ATM.newPin = ATM.pin; ATM.pin = ''; return atmGo('pinSet2'); }
   ATM.busy = true; renderGinko();
   try{
     if (ATM.mode === 'pinSet2'){
-      if (ATM.pin !== ATM.newPin){ ATM.busy = false; ATM.pin = ''; ATM.newPin = ''; toast('2回の暗証番号がちがいます。もう一度決めてね', 'err'); return atmGo('pinSet1'); }
+      if (ATM.pin !== ATM.newPin){ ATM.busy = false; ATM.pin = ''; ATM.newPin = ''; toast('2回の暗証番号がちがいます。もう一度決めてね', 'err'); atmGo('pinSet1'); return speak('2回の暗証番号が違います。もう一度、決めてください'); }
       await gs('setAtmPin', { token: S.token, memberId: me.id, newPin: ATM.pin });
       me.hasAtmPin = true;
       ATM.busy = false;
@@ -3485,7 +3512,7 @@ async function atmPinOk(){
     if (res.ok) return atmAfterPin_(ATM.pin);
     ATM.pin = '';
     if (res.locked){ me.atmLocked = true; return atmGo('locked'); }
-    toast(res.message, 'err');
+    atmErr_(res.message);
     renderGinko();
   }catch(err){ ATM.busy = false; ATM.pin = ''; renderGinko(); toastErr(err); }
 }
@@ -3499,10 +3526,10 @@ function atmAmountSec_(){
 
 function atmConfirm(){
   const sec = atmAmountSec_();
-  if (!ATM.all && sec < 1) return toast('数字を入れてから「分」か「秒」を押してください', 'err');
+  if (!ATM.all && sec < 1) return atmErr_('数字を入れてから「分」か「秒」を押してください');
   const b = bal_(S.me);
-  if (ATM.kind === 'in' && (ATM.all ? sec < 1 : sec > b.balanceSec)) return toast(ATM.all ? '手元に時間貯金がありません' : '手元の時間貯金が足りません', 'err');
-  if (ATM.kind === 'out' && (ATM.all ? sec < 1 : sec > b.bankSec)) return toast(ATM.all ? '銀行に時間がありません' : '銀行の残高が足りません', 'err');
+  if (ATM.kind === 'in' && (ATM.all ? sec < 1 : sec > b.balanceSec)) return atmErr_(ATM.all ? '手元に時間貯金がありません' : '手元の時間貯金が足りません');
+  if (ATM.kind === 'out' && (ATM.all ? sec < 1 : sec > b.bankSec)) return atmErr_(ATM.all ? '銀行に時間がありません' : '銀行の残高が足りません');
   atmGo('confirm');
 }
 
@@ -3526,21 +3553,52 @@ async function atmExecute(){
   }
 }
 
+/* ボタンの「ピッ」。音のファイルは使わず、その場で短い音を作る（本物のATMに近い高めの音）。
+   大きさは設定の「声の音量」に合わせる（0なら鳴らさない） */
+let atmAudio = null;
+function atmBeep(){
+  try{
+    const vol = Number(voicePref_().volume);
+    if (!vol) return;
+    atmAudio = atmAudio || new (window.AudioContext || window.webkitAudioContext)();
+    if (atmAudio.state === 'suspended') atmAudio.resume();
+    const t = atmAudio.currentTime;
+    const osc = atmAudio.createOscillator();
+    const gain = atmAudio.createGain();
+    osc.type = 'square';
+    osc.frequency.value = 2000;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.08 * vol, t + 0.005);
+    gain.gain.setValueAtTime(0.08 * vol, t + 0.07);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    osc.connect(gain);
+    gain.connect(atmAudio.destination);
+    osc.start(t);
+    osc.stop(t + 0.1);
+  }catch(e){ /* 音が出せない機種でも、ATMはそのまま使える */ }
+}
+
+// ATMのボタン・カードを押したら「ピッ」
+document.addEventListener('pointerdown', function(e){
+  const el = e.target.closest && e.target.closest('#atm button, #atm .cc-slot.eject');
+  if (el && !el.disabled) atmBeep();
+}, true);
+
 // パソコンのキーボードでも操作できるように（銀行タブを開いているときだけ）
 document.addEventListener('keydown', function(e){
   if (S.view !== 'ginko' || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
   if (!document.getElementById('modal').classList.contains('hidden')) return;
   if (ATM.mode === 'amount' || PIN_MODES.indexOf(ATM.mode) >= 0){
-    if (/^\d$/.test(e.key)){ e.preventDefault(); atmKey(e.key); }
-    else if (e.key === 'Backspace'){ e.preventDefault(); atmKey('⌫'); }
-    else if (e.key === 'Enter'){ e.preventDefault(); atmKey('分'); }
-    else if (e.key === 'Escape'){ atmKey('取消'); }
+    if (/^\d$/.test(e.key)){ e.preventDefault(); atmBeep(); atmKey(e.key); }
+    else if (e.key === 'Backspace'){ e.preventDefault(); atmBeep(); atmKey('⌫'); }
+    else if (e.key === 'Enter'){ e.preventDefault(); atmBeep(); atmKey('分'); }
+    else if (e.key === 'Escape'){ atmBeep(); atmKey('取消'); }
   }else if (ATM.mode === 'confirm'){
-    if (e.key === 'Enter'){ e.preventDefault(); atmExecute(); }
-    else if (e.key === 'Escape'){ atmGo('amount'); }
-  }else if (ATM.mode === 'eject' && e.key === 'Enter'){ e.preventDefault(); atmTakeCard(); }
-  else if (ATM.mode === 'thanks' && e.key === 'Enter'){ e.preventDefault(); atmGo('menu'); }
-  else if (ATM.mode === 'balance' && e.key === 'Enter'){ e.preventDefault(); atmEnd(); }
+    if (e.key === 'Enter'){ e.preventDefault(); atmBeep(); atmExecute(); }
+    else if (e.key === 'Escape'){ atmBeep(); atmGo('amount'); }
+  }else if (ATM.mode === 'eject' && e.key === 'Enter'){ e.preventDefault(); atmBeep(); atmTakeCard(); }
+  else if (ATM.mode === 'thanks' && e.key === 'Enter'){ e.preventDefault(); atmBeep(); atmGo('menu'); }
+  else if (ATM.mode === 'balance' && e.key === 'Enter'){ e.preventDefault(); atmBeep(); atmEnd(); }
 });
 
 /** 利息のカード：しくみと今週の見込み */
