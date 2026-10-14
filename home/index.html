@@ -199,6 +199,9 @@ main{padding:12px 12px 90px; max-width:900px; margin:0 auto;}
 .cc-slot{position:relative; height:200px; overflow:hidden;}
 .cc-slot::before{content:''; position:absolute; left:50%; top:4px; width:300px; max-width:96%; transform:translateX(-50%); height:8px; border-radius:4px; background:#10273f; z-index:2;}
 .ccard.inserting{animation:ccInsert 1.2s ease-in forwards;}
+.cc-slot.eject{cursor:pointer;}
+.ccard.ejecting{animation:ccEject 1s ease-out forwards;}
+@keyframes ccEject{0%{transform:translateY(-190px)} 100%{transform:translateY(24px)}}
 @keyframes ccInsert{0%{transform:translateY(40px) rotate(0)} 30%{transform:translateY(30px)} 100%{transform:translateY(-190px)}}
 .atm-pin{display:flex; justify-content:center; gap:12px; margin:12px 0 4px;}
 .atm-pin span{width:18px; height:18px; border-radius:50%; border:2px solid #1d3f63; background:#fff;}
@@ -3289,7 +3292,7 @@ function keypadHtml_(extra){
 function renderGinko(){
   const el = document.getElementById('atm');
   const head = '<div class="atm-head">🏦 Routine Bank ATM</div>';
-  const back = '<button class="btn atm-back" onclick="atmGo(\'menu\')">← 取引をやめる</button>';
+  const back = '<button class="btn atm-back" onclick="atmEnd()">← 取引をやめる</button>';
   const me = member_(S.me);
   const b = bal_(S.me);
 
@@ -3348,15 +3351,24 @@ function renderGinko(){
     return;
   }
 
-  if (ATM.mode === 'done'){
+  // 取引の終わり①：カードが出てくる。カードを押す（取る）と②へ
+  if (ATM.mode === 'eject'){
+    el.innerHTML = head + '<div class="atm-screen"><p class="atm-msg">💳 カードをお取りください</p>' +
+      '<div class="cc-slot eject" onclick="atmTakeCard()">' + cardHtml_(me, 'ejecting') + '</div>' +
+      '<p class="atm-note">カードを押すと取れます</p></div>';
+    return;
+  }
+
+  // 取引の終わり②：ご利用ありがとうございました（預け入れ・引き出しのときは明細も）
+  if (ATM.mode === 'thanks'){
     const r = ATM.result;
-    el.innerHTML = head + '<div class="atm-screen"><p class="atm-msg">お取引が完了しました。<br>💳 カードをお取りください。</p>' +
-      '<div class="atm-receipt"><div class="t">ご利用明細</div>' +
+    el.innerHTML = head + '<div class="atm-screen"><p class="atm-msg">ご利用ありがとうございました</p>' +
+      (r ? '<div class="atm-receipt"><div class="t">ご利用明細</div>' +
         '<div class="row"><span>' + (r.kind === 'in' ? '預け入れ' : '引き出し') + '</span><b>' + fmtDur(r.sec) + '</b></div>' +
         '<div class="row"><span>銀行の残高</span><b>' + fmtDur(r.bankSec) + '</b></div>' +
         '<div class="row"><span>手元の時間貯金</span><b>' + fmtDur(r.handSec) + '</b></div>' +
-        '<div class="row sub"><span>' + esc(r.at) + '</span></div></div></div>' +
-      '<div class="btn-row atm-actions"><button class="btn primary" onclick="atmGo(\'menu\')">カードを取る（メニューへ）</button></div>';
+        '<div class="row sub"><span>' + esc(r.at) + '</span></div></div>' : '') + '</div>' +
+      (r ? '<div class="btn-row atm-actions"><button class="btn primary" onclick="atmGo(\'menu\')">メニューに戻る</button></div>' : '');
     return;
   }
 
@@ -3372,8 +3384,22 @@ function renderGinko(){
       return '<div class="list-item"><div class="main"><div class="title">' + title + '</div><div class="sub">' + sub + '</div></div>' +
         '<div class="val ' + (out ? 'minus' : 'plus') + '">' + (out ? '−' : '+') + fmtDur(h.sec) + '</div></div>';
     }).join('') || '<p class="empty">まだありません</p>') + '</div></div>' +
-    '<button class="btn primary atm-back" onclick="atmGo(\'menu\')">💳 カードを取る（メニューへ）</button>';
+    '<button class="btn primary atm-back" onclick="atmEnd()">取引を終わる</button>';
   renderInterest_(me);
+}
+
+/** 取引を終える：カードを出す（明細は ATM.result。取消・残高照会のときは null） */
+function atmEnd(result){
+  ATM.result = result || null;
+  ATM.pin = ''; ATM.pinOk = ''; ATM.newPin = '';
+  atmGo('eject');
+}
+
+/** カードを取る → ご利用ありがとうございました → （明細がなければ少しして）メニューへ */
+function atmTakeCard(){
+  if (ATM.mode !== 'eject') return;
+  atmGo('thanks');
+  if (!ATM.result) atmTimer = setTimeout(function(){ atmGo('menu'); }, 2200);
 }
 
 function atmGo(mode){
@@ -3395,7 +3421,7 @@ function atmStart(kind){
 
 function atmKey(k){
   if (ATM.busy) return;
-  if (k === '取消') return atmGo('menu');
+  if (k === '取消') return atmEnd();
   if (k === '分') return atmOk();
   const pinMode = PIN_MODES.indexOf(ATM.mode) >= 0;
   if (pinMode){
@@ -3479,7 +3505,7 @@ async function atmExecute(){
     ATM.result = { kind: ATM.kind, sec: Math.abs(after.bankSec - before), bankSec: after.bankSec, handSec: after.balanceSec,
                    at: new Date().toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) };
     ATM.busy = false;
-    atmGo('done');
+    atmEnd(ATM.result);
   }catch(err){
     ATM.busy = false; renderGinko();
     toastErr(err);
@@ -3498,7 +3524,9 @@ document.addEventListener('keydown', function(e){
   }else if (ATM.mode === 'confirm'){
     if (e.key === 'Enter'){ e.preventDefault(); atmExecute(); }
     else if (e.key === 'Escape'){ atmGo('amount'); }
-  }else if ((ATM.mode === 'done' || ATM.mode === 'balance') && e.key === 'Enter'){ e.preventDefault(); atmGo('menu'); }
+  }else if (ATM.mode === 'eject' && e.key === 'Enter'){ e.preventDefault(); atmTakeCard(); }
+  else if (ATM.mode === 'thanks' && e.key === 'Enter'){ e.preventDefault(); atmGo('menu'); }
+  else if (ATM.mode === 'balance' && e.key === 'Enter'){ e.preventDefault(); atmEnd(); }
 });
 
 /** 利息のカード：しくみと今週の見込み */
