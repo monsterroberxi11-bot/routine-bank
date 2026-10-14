@@ -1616,7 +1616,7 @@ function pickBankMember(id){ S.bankMember = id; renderBank(); }
    暗証番号は1人ずつ（最初に使うときに決める）。3回まちがえるとロックされ、親が設定からリセットする。
    最初のメニューでは金額を見せない。数字は下のテンキーで入れる（パソコンでは数字キー・BackSpace・Enter でも） */
 
-const ATM = { mode: 'menu', kind: '', digits: '', all: false, pin: '', newPin: '', pinOk: '', result: null, busy: false };
+const ATM = { mode: 'menu', kind: '', digits: '', unit: 'min', all: false, pin: '', newPin: '', pinOk: '', result: null, busy: false };
 const PIN_MODES = ['pin', 'pinSet1', 'pinSet2'];
 let atmTimer = 0;
 
@@ -1628,10 +1628,11 @@ function cardHtml_(m, cls){
 }
 
 /** 本物のATMのような 3列×5段のテンキー。取消＝取引をやめる、訂正＝入れた数字を消す、
- *  全部＝預け入れなら手元の分を全部・引き出しなら銀行の分を秒まで全部、千＝「3」「千」で3000、分＝決定（ATMの「円」キー） */
-const ATM_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '取消', '0', '訂正', '全部', '千', '分'];
+ *  全部＝預け入れなら手元を全部・引き出しなら銀行を全部（秒まで）、
+ *  秒・分＝決定（ATMの「円」キーと同じ。「30」「秒」で30秒、「15」「分」で15分） */
+const ATM_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '取消', '0', '訂正', '全部', '秒', '分'];
 function keypadHtml_(extra){
-  const cls = { '取消': ' cancel', '訂正': ' fix', '全部': ' unit', '千': ' unit', '分': ' ok' };
+  const cls = { '取消': ' cancel', '訂正': ' fix', '全部': ' unit', '秒': ' ok', '分': ' ok' };
   return '<div class="atm-keys">' + ATM_KEYS.map(function(k){
       return '<button class="atm-key' + (cls[k] || '') + '" onclick="atmKey(\'' + k + '\')"' + (ATM.busy ? ' disabled' : '') + '>' + k + '</button>';
     }).join('') + '</div>' + (extra ? '<div class="btn-row atm-actions">' + extra + '</div>' : '');
@@ -1683,7 +1684,7 @@ function renderGinko(){
       '<p class="atm-msg">' + (isIn ? '預け入れる時間を入れてください' : '引き出す時間を入れてください') + '</p>' +
       '<div class="atm-amount"><span id="atmDigits">' + (ATM.all ? '全部' : (ATM.digits || '0')) + '</span></div>' +
       '<p class="atm-note">' + (isIn ? '手元から ' + limit + '分 まで預けられます' : '銀行から ' + fmtDur(limit) + ' まで引き出せます') +
-      '<br>入れたら「分」を押してください</p></div>' +
+      '<br>入れたら「分」か「秒」を押してください</p></div>' +
       keypadHtml_();
     return;
   }
@@ -1692,7 +1693,7 @@ function renderGinko(){
     const isIn = ATM.kind === 'in';
     el.innerHTML = head + '<div class="atm-screen">' +
       '<p class="atm-msg">' + (isIn ? '預け入れ' : '引き出し') + '</p>' +
-      '<div class="atm-amount">' + (ATM.all ? '全部' : ATM.digits) + '<small>' + (ATM.all ? '' : '分') + '</small></div>' +
+      '<div class="atm-amount">' + (ATM.all ? '全部' : ATM.digits) + '<small>' + (ATM.all ? '' : ATM.unit === 'sec' ? '秒' : '分') + '</small></div>' +
       '<p class="atm-msg">よろしいですか？</p></div>' +
       '<div class="btn-row atm-actions"><button class="btn" onclick="atmGo(\'amount\')">いいえ（訂正）</button>' +
       '<button class="btn primary" id="atmOk" onclick="atmExecute()"' + (ATM.busy ? ' disabled' : '') + '>' + (ATM.busy ? '処理中…' : 'はい') + '</button></div>';
@@ -1770,12 +1771,12 @@ function atmStart(kind){
 function atmKey(k){
   if (ATM.busy) return;
   if (k === '取消') return atmEnd();
-  if (k === '分') return atmOk();
+  if (k === '分' || k === '秒'){ ATM.unit = k === '秒' ? 'sec' : 'min'; return atmOk(); }
   const pinMode = PIN_MODES.indexOf(ATM.mode) >= 0;
   if (pinMode){
     if (k === '訂正') ATM.pin = '';
     else if (k === '⌫') ATM.pin = ATM.pin.slice(0, -1);          // パソコンの BackSpace
-    else if (/^\d$/.test(k)) ATM.pin = (ATM.pin + k).slice(0, 4);   // 全部・千は暗証番号では使わない
+    else if (/^\d$/.test(k)) ATM.pin = (ATM.pin + k).slice(0, 4);   // 全部は暗証番号では使わない
     renderGinko();
     if (ATM.pin.length === 4) atmPinOk();                        // 本物のATMと同じく、4けた入れたら自動で進む
     return;
@@ -1783,12 +1784,7 @@ function atmKey(k){
   if (k === '訂正'){ ATM.digits = ''; ATM.all = false; }
   else if (k === '⌫'){ ATM.all = false; ATM.digits = ATM.digits.slice(0, -1); }
   else if (k === '全部'){
-    // 引き出し：銀行の分を秒まで全部。預け入れ：手元の分を全部（分単位）
-    if (ATM.kind === 'out'){ ATM.all = true; ATM.digits = ''; }
-    else { ATM.all = false; ATM.digits = String(Math.max(0, Math.floor(bal_(S.me).balanceSec / 60))).replace(/^0+/, ''); }
-  }
-  else if (k === '千'){
-    if (ATM.digits){ ATM.all = false; ATM.digits = (ATM.digits + '000').slice(0, 8); }
+    ATM.all = true; ATM.digits = '';   // 預け入れは手元を全部・引き出しは銀行を全部（どちらも秒まで）
   }
   else if (/^\d$/.test(k)){ ATM.all = false; ATM.digits = (ATM.digits + k).replace(/^0+/, '').slice(0, 8); }
   renderGinko();
@@ -1831,12 +1827,19 @@ async function atmPinOk(){
   }catch(err){ ATM.busy = false; ATM.pin = ''; renderGinko(); toastErr(err); }
 }
 
-function atmConfirm(){
-  if (!ATM.all && !(Number(ATM.digits) >= 1)) return toast('何分か入れてください', 'err');
+/** 入れた金額（秒）。全部のときは手元／銀行の残り全部 */
+function atmAmountSec_(){
   const b = bal_(S.me);
-  if (ATM.kind === 'in' && Number(ATM.digits) * 60 > b.balanceSec) return toast('手元の時間貯金が足りません', 'err');
-  if (ATM.kind === 'out' && !ATM.all && Number(ATM.digits) * 60 > b.bankSec) return toast('銀行の残高が足りません', 'err');
-  if (ATM.kind === 'out' && ATM.all && !b.bankSec) return toast('銀行に時間がありません', 'err');
+  if (ATM.all) return Math.max(0, ATM.kind === 'in' ? b.balanceSec : b.bankSec);
+  return Number(ATM.digits || 0) * (ATM.unit === 'sec' ? 1 : 60);
+}
+
+function atmConfirm(){
+  const sec = atmAmountSec_();
+  if (!ATM.all && sec < 1) return toast('数字を入れてから「分」か「秒」を押してください', 'err');
+  const b = bal_(S.me);
+  if (ATM.kind === 'in' && (ATM.all ? sec < 1 : sec > b.balanceSec)) return toast(ATM.all ? '手元に時間貯金がありません' : '手元の時間貯金が足りません', 'err');
+  if (ATM.kind === 'out' && (ATM.all ? sec < 1 : sec > b.bankSec)) return toast(ATM.all ? '銀行に時間がありません' : '銀行の残高が足りません', 'err');
   atmGo('confirm');
 }
 
@@ -1846,7 +1849,7 @@ async function atmExecute(){
   const before = bal_(S.me).bankSec;
   try{
     const res = await gs(ATM.kind === 'in' ? 'bankDeposit' : 'bankWithdraw',
-      { token: S.token, memberId: S.me, atmPin: ATM.pinOk, minutes: Number(ATM.digits), all: ATM.all });
+      { token: S.token, memberId: S.me, atmPin: ATM.pinOk, sec: ATM.all ? '' : atmAmountSec_(), all: ATM.all });
     S.balances = res.balances;
     S.interest = res.interest;
     const after = bal_(S.me);
