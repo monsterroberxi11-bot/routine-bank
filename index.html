@@ -267,9 +267,12 @@ main{padding:12px 12px 90px; max-width:900px; margin:0 auto;}
 .run-sub{display:flex; gap:8px; width:100%; max-width:420px;}
 .run-sub .btn{flex:1; background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.2); color:#fff;}
 .run-sub + .run-sub{margin-top:8px;}
+.run-sub .btn{min-width:0; padding-left:6px; padding-right:6px;}
+.run-sub + .run-sub .btn{font-size:13.5px;}
 .run-upcoming{width:100%; max-width:420px; margin-top:20px; text-align:left; font-size:13px;}
 .run-upcoming .row{display:flex; justify-content:space-between; padding:6px 2px; border-bottom:1px solid rgba(255,255,255,.08); opacity:.7;}
 .run-upcoming .row.done{opacity:.45;}
+.today-tag{display:inline-block; font-size:11px; font-weight:800; padding:1px 6px; border-radius:6px; background:#ffd36b; color:#5a3d00; vertical-align:middle;}
 .done-big{font-size:46px; font-weight:800; font-variant-numeric:tabular-nums; margin:8px 0;}
 .done-table{width:100%; max-width:420px; text-align:left; margin:12px 0 18px; font-size:14px;}
 .done-table .row{display:flex; gap:8px; justify-content:space-between; padding:8px 2px; border-bottom:1px solid rgba(255,255,255,.1);}
@@ -624,6 +627,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
     </div>
     <div class="run-sub">
       <button class="btn" onclick="reorderRun()">↕ 今日の順番</button>
+      <button class="btn" onclick="addTodayStep()">＋ 今日だけ</button>
       <button class="btn" onclick="restartRun()">↺ 最初から</button>
     </div>
     <div class="run-upcoming" id="runUpcoming"></div>
@@ -1082,7 +1086,7 @@ function renderRun_(){
   const remain = s.targetSec - elapsed;
 
   document.getElementById('runCount').textContent = (R.idx + 1) + ' / ' + R.steps.length;
-  document.getElementById('runStep').textContent = s.name;
+  document.getElementById('runStep').innerHTML = esc(s.name) + (s.today ? ' <span class="today-tag">今日だけ</span>' : '');
   document.getElementById('runTarget').textContent = '目標 ' + fmtDur(s.targetSec);
   document.getElementById('runBar').style.width = (R.idx / R.steps.length * 100) + '%';
   document.getElementById('runEye').textContent = R.showRemaining ? '🙈 かくす' : '👁 見る';
@@ -1097,7 +1101,7 @@ function renderRun_(){
     const res = R.results.filter(function(r){ return r.stepId === x.id && r.idx === i; })[0];
     const right = res ? '<span class="' + (res.targetSec - res.actualSec < 0 ? 'minus' : 'plus') + '">' + fmtSigned(res.targetSec - res.actualSec) + '</span>'
                       : (i < R.idx ? 'とばした' : fmtDur(x.targetSec));
-    return '<div class="row' + (i < R.idx ? ' done' : '') + '"><span>' + (i < R.idx ? '✓ ' : '') + esc(x.name) + '</span><span>' + right + '</span></div>';
+    return '<div class="row' + (i < R.idx ? ' done' : '') + '"><span>' + (i < R.idx ? '✓ ' : '') + esc(x.name) + (x.today ? ' <span class="today-tag">今日だけ</span>' : '') + '</span><span>' + right + '</span></div>';
   }).join('');
 
   // 時間ぴったりのお知らせ（残り時間を表示しているときだけ）
@@ -1305,6 +1309,38 @@ function toggleRunShow(){
   R.alerted = R.alerted || (R.steps[R.idx] && elapsedMs_() / 1000 >= R.steps[R.idx].targetSec);
   persistRun_();
   renderRun_();
+}
+
+/** その日だけ思いがけないやることが増えたときに、今日の回だけ動作を足す（ルーチン本体は変えない）。
+ *  目標を長くして貯金を増やすズルを防ぐため、子どもが足すときは親のPIN（顔認証も可）が必要。親が使っているときはそのまま */
+async function addTodayStep(){
+  if (!R || R.askingReason) return;
+  if (!isParent_(R.memberId)){
+    if (!(await askParentPinOnce_('＋ 今日だけのやること', '今日だけやることを足すには、親のPINが必要です。'))) return;
+    await new Promise(function(r){ setTimeout(r, 0); });   // PINの窓が閉じきってから次の窓を開く
+  }
+  openModal({
+    title: '＋ 今日だけのやること',
+    body: '<p class="muted">今日の回だけに足します。ルーチン本体は変わりません。</p><div class="form">' +
+      '<label>やること<input type="text" id="tdName" maxlength="40" placeholder="例：お米を研ぐ"></label>' +
+      '<label>目標時間</label><div class="step-edit">' +
+        '<input type="number" id="tdMin" min="0" inputmode="numeric" value="3"><span class="u">分</span>' +
+        '<input type="number" id="tdSec" min="0" max="59" inputmode="numeric" value="0"><span class="u">秒</span></div>' +
+      '<label>入れる場所<select id="tdWhere"><option value="next">今のやることの次</option><option value="last">いちばん最後</option></select></label></div>',
+    ok: '足す',
+    onOpen: function(){ setTimeout(function(){ document.getElementById('tdName').focus(); }, 50); },
+    onOk: function(){
+      const name = val('tdName');
+      if (!name) throw new Error('やることを入れてください');
+      const sec = (Number(val('tdMin')) || 0) * 60 + (Number(val('tdSec')) || 0);
+      if (sec < 1) throw new Error('目標時間を入れてください');
+      const at = val('tdWhere') === 'last' ? R.steps.length : R.idx + 1;
+      R.steps.splice(at, 0, { id: 'today-' + uuid_().slice(0, 8), name: name, targetSec: Math.round(sec), today: true });
+      persistRun_();
+      renderRun_();
+      speak('今日だけ、' + name + 'を足しました');
+    }
+  });
 }
 
 /** 今日だけ、まだ終わっていない動作の順番を入れかえる（ルーチン本体は変えない）。
