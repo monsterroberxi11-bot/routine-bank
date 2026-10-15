@@ -2197,6 +2197,8 @@ function saveReward(args) {
 
 const FB_DAILY_LIMIT = 30;     // 1つの端末から1日に送れる数（いたずら対策）
 const FB_MAX_LENGTH  = 1000;
+// 要望を送ってきたアプリ（args.app）→【アプリ】列の名前。家事ポイントの要望もここに届く（管理者パネルを1つにまとめるため）
+const FB_APPS = { web: 'Routine Bank', home: 'Routine Bank Offline', kaji: '家事ポイント' };
 
 function checkThreadId_(threadId) {
   const id = String(threadId || '');
@@ -2236,7 +2238,7 @@ function sendFeedback(args) {
       if (sentToday >= FB_DAILY_LIMIT) throw new Error('今日はこれ以上送れません。また明日送ってください');
       appendRow_(SHEET_FEEDBACK, HEAD_FEEDBACK, {
         'メッセージID': nextId_(SHEET_FEEDBACK, 'C'), '日時': nowStr_(), 'スレッドID': threadId,
-        'アプリ': args.app === 'home' ? 'Routine Bank Offline' : 'Routine Bank',
+        'アプリ': FB_APPS[args.app] || 'Routine Bank',
         '家庭名': String(args.familyName || '').slice(0, 40), '名前': String(args.name || '').slice(0, 40),
         '内容': text, '返信': '', '状態': '未対応', '送信者': '利用者'
       });
