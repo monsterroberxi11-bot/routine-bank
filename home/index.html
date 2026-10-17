@@ -354,7 +354,7 @@ table.grid th{font-size:11.5px; color:var(--muted);}
 /* ── フォーム・ボタン ───────────────── */
 input,select,textarea,button{font-family:inherit; font-size:16px;}
 input[type=range],input[type=checkbox]{accent-color:var(--primary);}
-input[type=text],input[type=password],input[type=number],select,textarea{
+input[type=text],input[type=password],input[type=number],input[type=time],select,textarea{
   width:100%; padding:10px 12px; margin-top:4px;
   border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--text); min-height:var(--tap);
 }
@@ -971,8 +971,10 @@ const ATM_MAX_MISS = 3;
 // 子どもが作る・変えるときは親の承認が必要。申請中の内容は【申請内容】にJSONで置き、承認されたら本体に反映する。
 // 承認状態：空＝使える／「未承認」＝まだ一度も承認されていない（新しく作って申請中・却下された）ので使えない
 // 却下されたときは【申請内容】を残して【却下理由】を入れる（子どもが直して出し直せるように）。申請中＝申請内容あり・却下理由なし
+// 通知時刻：'07:00' のように。空ならお知らせしない。通知曜日：'12345' のように曜日の番号（0=日〜6=土）を並べる。空なら毎日
+// 通知した日：その日のお知らせを送った日（同じ日に二重に送らないため）
 const HEAD_ROUTINE  = ['ルーチンID', '家庭ID', 'ルーチン名', '対象メンバーID', '表示順', '有効', '作成者ID',
-                       '承認状態', '申請内容', '申請日時', '却下理由'];
+                       '承認状態', '申請内容', '申請日時', '却下理由', '通知時刻', '通知曜日', '通知した日'];
 const HEAD_STEP     = ['動作ID', '家庭ID', 'ルーチンID', '動作名', '目標秒', '表示順', '有効'];
 // 1分あたり：貯金1分を交換すると何（単位）になるか。例）ゲーム時間＝1分あたり1・単位「分」、換金＝1分あたり10・単位「円」
 const HEAD_REWARD   = ['交換先ID', '家庭ID', '交換先名', '1分あたり', '単位', '表示順', '有効'];
@@ -1007,15 +1009,24 @@ const INTEREST_MAX_RATE = 10;
 const INTEREST_MAX_WEEKS = 12;              // 久しぶりに開いたときも、さかのぼるのは12週まで
 // 開発者キーのSHA-256（キーそのものは書かない。Home版ではこのファイルが公開されるため）
 const ADMIN_KEY_HASH = '4ad58dc7dfe88d627960e686cf6a9b8d9799832e336138248ccd9e87e68b7946';
+// 通知（Web Push）。1行＝1つの端末（ブラウザ）の1人分。同じ端末を家族で使うときは人ごとに行ができる。
+// 管理者パネルの通知は 家庭ID＝空・メンバーID＝PUSH_ADMIN。スレッドID＝その人の要望チャット（返信のお知らせ用）
+const SHEET_PUSH_SUB = '通知登録';
+const HEAD_PUSH_SUB  = ['登録ID', '家庭ID', 'メンバーID', 'スレッドID', 'エンドポイント', '端末', '登録日時', '更新日時', '状態'];
+// 送ったお知らせ。1行＝1つの端末あて。端末は中身なしの合図だけ受け取り、ここから中身を取りに来る（受け取り日時が入る）
+const SHEET_PUSH_MSG = '通知';
+const HEAD_PUSH_MSG  = ['通知ID', '日時', 'エンドポイント', 'タイトル', '本文', '開く場所', '受け取り日時'];
+const PUSH_ADMIN = '管理者';
 
 const ALL_SHEETS = [
   [SHEET_FAMILY, HEAD_FAMILY], [SHEET_SESSION, HEAD_SESSION], [SHEET_MEMBER, HEAD_MEMBER],
   [SHEET_ROUTINE, HEAD_ROUTINE], [SHEET_STEP, HEAD_STEP], [SHEET_REWARD, HEAD_REWARD],
   [SHEET_RUNLOG, HEAD_RUNLOG], [SHEET_EXCHANGE, HEAD_EXCHANGE], [SHEET_ERRORLOG, HEAD_ERRORLOG],
-  [SHEET_FEEDBACK, HEAD_FEEDBACK], [SHEET_INTEREST, HEAD_INTEREST], [SHEET_BANK, HEAD_BANK]
+  [SHEET_FEEDBACK, HEAD_FEEDBACK], [SHEET_INTEREST, HEAD_INTEREST], [SHEET_BANK, HEAD_BANK],
+  [SHEET_PUSH_SUB, HEAD_PUSH_SUB], [SHEET_PUSH_MSG, HEAD_PUSH_MSG]
 ];
 // 見出しを変えたらこの番号を上げる → 次の呼び出しで自動的にシートが整う
-const SCHEMA_VERSION = '10';
+const SCHEMA_VERSION = '11';
 
 // ── 状態 ────────────────────────────────
 const ROLE_PARENT = '親';
@@ -1062,7 +1073,9 @@ const API_FUNCTIONS = {
   adminListThreads: adminListThreads, adminGetThread: adminGetThread, adminReply: adminReply,
   adminDeleteThread: adminDeleteThread, setInterestRate: setInterestRate,
   bankDeposit: bankDeposit, bankWithdraw: bankWithdraw,
-  setAtmPin: setAtmPin, verifyAtmPin: verifyAtmPin, resetAtmPin: resetAtmPin
+  setAtmPin: setAtmPin, verifyAtmPin: verifyAtmPin, resetAtmPin: resetAtmPin,
+  pushSubscribe: pushSubscribe, pushUnsubscribe: pushUnsubscribe, pushTest: pushTest, getPushInbox: getPushInbox,
+  adminPushSubscribe: adminPushSubscribe, adminPushUnsubscribe: adminPushUnsubscribe
 };
 
 function doPost(e) {
@@ -1434,6 +1447,7 @@ function getRoutines_(familyId) {
       return {
         id: r['ルーチンID'], name: r['ルーチン名'], memberId: r['対象メンバーID'], createdBy: r['作成者ID'] || '',
         order: num_(r['表示順']), active: isTrue_(r['有効']),
+        remindAt: r['通知時刻'] || '', remindDays: r['通知曜日'] || '',
         approved: r['承認状態'] !== RT_UNAPPROVED,
         request: parseRequest_(r['申請内容']), requestedAt: r['申請日時'] || '', rejectReason: r['却下理由'] || '',
         steps: steps.filter(function (s) { return s['ルーチンID'] === r['ルーチンID']; })
@@ -1863,6 +1877,8 @@ function requestExchange(args) {
         '使う秒': minutes * 60, '換算値': Math.round(minutes * reward.perMin * 100) / 100, '単位': reward.unit,
         'メモ': String(args.memo || '').slice(0, 200), '状態': EX_PENDING
       });
+      notifyParents_(sess.familyId, '🙋 交換の承認待ち', member.name + '：' + reward.name + ' ' + minutes + '分（' +
+        fmtValue_(minutes * reward.perMin) + reward.unit + '）', '#view=bank');
       return { message: '申請しました。親の承認を待ってね', balances: getBalances_(sess.familyId) };
     });
   });
@@ -1894,6 +1910,10 @@ function decideExchange(args) {
         '処理者ID': actor['メンバーID'], '処理者名': actor['名前'],
         '却下理由': args.approve ? '' : String(args.reason || '')
       });
+      const what = row['交換先名'] + ' ' + Math.round(num_(row['使う秒']) / 60) + '分';
+      notifyMember_(sess.familyId, row['メンバーID'], args.approve ? '✅ 交換が承認されました' : '↩️ 交換が却下されました',
+        args.approve ? what + '（' + fmtValue_(num_(row['換算値'])) + row['単位'] + '）'
+                     : what + (args.reason ? '　理由：' + args.reason : '') + '（貯金は戻ったよ）', '#view=bank');
       return { message: args.approve ? '承認しました' : '却下しました（貯金は戻ります）', balances: getBalances_(sess.familyId) };
     });
   });
@@ -2070,7 +2090,8 @@ function saveRoutine(args) {
       }
 
       if (!isParent) {
-        const request = { name: draft.name, order: draft.order, active: draft.active, steps: draft.steps };
+        const request = { name: draft.name, order: draft.order, active: draft.active, steps: draft.steps,
+                          remindAt: draft.remindAt, remindDays: draft.remindDays };
         const values = { '申請内容': JSON.stringify(request), '申請日時': nowStr_(), '却下理由': '' };
         if (row) {
           updateRow_(SHEET_ROUTINE, HEAD_ROUTINE, row._row, values);
@@ -2081,11 +2102,13 @@ function saveRoutine(args) {
             '対象メンバーID': actor.id, '表示順': draft.order, '有効': 'TRUE', '作成者ID': actor.id, '承認状態': RT_UNAPPROVED
           }));
         }
+        notifyParents_(sess.familyId, '🆕 ルーチンの承認待ち', actor.name + '：' + (row ? '「' + draft.name + '」の変更' : '「' + draft.name + '」を新しく作る'), '#view=settings');
         return { message: '申請しました。親の承認を待ってね' };
       }
 
       const values = { 'ルーチン名': draft.name, '対象メンバーID': args.memberId || '', '表示順': draft.order,
-                       '有効': draft.active ? 'TRUE' : 'FALSE', '承認状態': '', '申請内容': '', '申請日時': '', '却下理由': '' };
+                       '有効': draft.active ? 'TRUE' : 'FALSE', '承認状態': '', '申請内容': '', '申請日時': '', '却下理由': '',
+                       '通知時刻': draft.remindAt, '通知曜日': draft.remindDays };
       let routineId = args.routineId;
       if (row) {
         updateRow_(SHEET_ROUTINE, HEAD_ROUTINE, row._row, values);
@@ -2110,15 +2133,20 @@ function decideRoutine(args) {
       const row = readFamily_(SHEET_ROUTINE, sess.familyId).filter(function (r) { return r['ルーチンID'] === args.routineId; })[0];
       const request = row && !row['却下理由'] && parseRequest_(row['申請内容']);
       if (!request) throw new Error('この申請はもう処理されています');
+      const creator = row['作成者ID'];
       if (!args.approve) {
-        updateRow_(SHEET_ROUTINE, HEAD_ROUTINE, row._row, { '却下理由': String(args.reason || '').slice(0, 200) || '（理由なし）' });
+        const reason = String(args.reason || '').slice(0, 200) || '（理由なし）';
+        updateRow_(SHEET_ROUTINE, HEAD_ROUTINE, row._row, { '却下理由': reason });
+        notifyMember_(sess.familyId, creator, '↩️ ルーチンが却下されました', '「' + request.name + '」理由：' + reason, '#view=settings');
         return { message: '却下しました' };
       }
       updateRow_(SHEET_ROUTINE, HEAD_ROUTINE, row._row, {
         'ルーチン名': request.name, '表示順': request.order, '有効': request.active ? 'TRUE' : 'FALSE',
-        '承認状態': '', '申請内容': '', '申請日時': '', '却下理由': ''
+        '承認状態': '', '申請内容': '', '申請日時': '', '却下理由': '',
+        '通知時刻': request.remindAt || '', '通知曜日': request.remindDays || ''
       });
       writeSteps_(sess.familyId, args.routineId, request.steps);
+      notifyMember_(sess.familyId, creator, '✅ ルーチンが承認されました', '「' + request.name + '」が使えるようになったよ', '#view=timer');
       return { message: '承認しました' };
     });
   });
@@ -2136,7 +2164,13 @@ function normalizeRoutine_(args) {
     if (!s.name) throw new Error('名前が空の動作があります');
     if (s.targetSec < 5) throw new Error('「' + s.name + '」の目標時間が短すぎます');
   });
-  return { name: name, order: num_(args.order) || 1, active: args.active !== false, steps: steps };
+  const remindAt = String(args.remindAt || '').trim();
+  if (remindAt && !/^([01]\d|2[0-3]):[0-5]\d$/.test(remindAt)) throw new Error('お知らせの時刻が正しくありません');
+  // 曜日は 0〜6 の数字だけ、重なりなしで小さい順に（全部えらんだら空＝毎日）
+  let remindDays = String(args.remindDays || '').replace(/[^0-6]/g, '').split('').filter(function (d, i, a) { return a.indexOf(d) === i; }).sort().join('');
+  if (remindDays.length === 7) remindDays = '';
+  return { name: name, order: num_(args.order) || 1, active: args.active !== false, steps: steps,
+           remindAt: remindAt, remindDays: remindDays };
 }
 
 /** ルーチンの動作を steps のとおりにする（あるものは更新、新しいものは追加、なくなったものは無効に） */
@@ -2242,6 +2276,7 @@ function sendFeedback(args) {
         '家庭名': String(args.familyName || '').slice(0, 40), '名前': String(args.name || '').slice(0, 40),
         '内容': text, '返信': '', '状態': '未対応', '送信者': '利用者'
       });
+      notifyAdmin_('💬 ' + (String(args.name || '').slice(0, 40) || '名前なし') + '（' + (FB_APPS[args.app] || 'Routine Bank') + '）', text);
       return { messages: feedbackThread_(threadId) };
     });
   });
@@ -2350,7 +2385,364 @@ function adminReply(args) {
       rows.forEach(function (r) {
         if (r['状態'] === '未対応') updateRow_(SHEET_FEEDBACK, HEAD_FEEDBACK, r._row, { '状態': '返信済' });
       });
+      notifyThread_(threadId, '💬 開発者から返事が来ました', text, '#chat');
       return { messages: feedbackThread_(threadId, true) };
+    });
+  });
+}
+
+
+
+/* ============================================================
+ *  11. 通知（Web Push）
+ *  アプリを閉じていても、スマホ・パソコンにお知らせを出す。
+ *  端末に送るのは「中身なしの合図」だけ（中身を暗号化しなくてすむ）。合図を受けた端末の Service Worker が
+ *  getPushInbox で中身を取りに来て表示する。送り先の確認には VAPID（鍵で署名した名札）を使う。
+ *  秘密鍵は Secret.gs の VAPID_PRIVATE_D（GASにだけ置く。Offline版にはないので通知はお休み）。
+ *  ルーチンのお知らせは、時間トリガー（setupNotifications を一度実行すると5分ごとに checkReminders）で送る。
+ * ========================================================== */
+
+const VAPID_PUBLIC_KEY = 'BBYK5L3hZp88usHniF7cqNxWHYweGm6AYpmmi_sw4_8BaKk0qH5bTG3Li55IIpbAKL3AxsXf_0_vdmQ8gGS_sOM';
+const VAPID_SUBJECT = 'https://monsterroberxi11-bot.github.io/routine-bank/';
+// 送り先として受け付けるのは、ブラウザの通知サーバーだけ（Chrome/Android・Firefox・iPhone/Mac・Edge）
+const PUSH_HOSTS = /^https:\/\/([a-z0-9-]+\.)*(fcm\.googleapis\.com|push\.services\.mozilla\.com|push\.apple\.com|notify\.windows\.com)\//;
+const PUSH_INBOX_DAYS = 3;          // これより古いお知らせは、取りに来ても出さない
+const REMIND_WINDOW_MIN = 30;       // 時刻をすぎてからこの分までに気づけたら送る（トリガーが遅れたとき用）
+
+function pushReady_() {
+  return typeof UrlFetchApp !== 'undefined' && typeof VAPID_PRIVATE_D !== 'undefined';
+}
+
+function checkEndpoint_(endpoint) {
+  const e = String(endpoint || '');
+  if (e.length > 800 || !PUSH_HOSTS.test(e)) throw new Error('この端末の通知の宛先が正しくありません');
+  return e;
+}
+
+/** 1.5 → '1.5'、10 → '10' */
+function fmtValue_(n) {
+  return String(Math.round(n * 100) / 100);
+}
+
+/** 宛先の行を足す（同じ端末・同じ人の行があれば書き換え） */
+function upsertPushSub_(familyId, memberId, endpoint, threadId, device) {
+  withLock_(function () {
+    const now = nowStr_();
+    const row = readSheet_(SHEET_PUSH_SUB).filter(function (r) {
+      return r['エンドポイント'] === endpoint && r['家庭ID'] === familyId && r['メンバーID'] === memberId;
+    })[0];
+    const values = { 'スレッドID': threadId, '端末': device, '更新日時': now, '状態': ST_ACTIVE };
+    if (row) updateRow_(SHEET_PUSH_SUB, HEAD_PUSH_SUB, row._row, values);
+    else appendRow_(SHEET_PUSH_SUB, HEAD_PUSH_SUB, Object.assign(values, {
+      '登録ID': nextId_(SHEET_PUSH_SUB, 'P'), '家庭ID': familyId, 'メンバーID': memberId, 'エンドポイント': endpoint, '登録日時': now
+    }));
+  });
+}
+
+function stopPushSub_(familyId, memberId, endpoint) {
+  withLock_(function () {
+    readSheet_(SHEET_PUSH_SUB).forEach(function (r) {
+      if (r['エンドポイント'] === endpoint && r['家庭ID'] === familyId && r['メンバーID'] === memberId && r['状態'] === ST_ACTIVE) {
+        updateRow_(SHEET_PUSH_SUB, HEAD_PUSH_SUB, r._row, { '状態': ST_CANCELED, '更新日時': nowStr_() });
+      }
+    });
+  });
+}
+
+/** この端末でこの人のお知らせを受け取る。起動のたびにも呼ぶ（宛先が変わっていたら直す）。
+ *  args = {token, memberId, endpoint, threadId, device} */
+function pushSubscribe(args) {
+  return guarded_('pushSubscribe', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    const ok = getMembers_(sess.familyId).some(function (m) { return m.id === args.memberId && m.active; });
+    if (!ok) throw new Error('メンバーが見つかりません');
+    const threadId = args.threadId ? checkThreadId_(args.threadId) : '';
+    upsertPushSub_(sess.familyId, args.memberId, checkEndpoint_(args.endpoint), threadId, String(args.device || '').slice(0, 60));
+    return { ok: true, ready: pushReady_() };
+  });
+}
+
+/** args = {token, memberId, endpoint} */
+function pushUnsubscribe(args) {
+  return guarded_('pushUnsubscribe', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    stopPushSub_(sess.familyId, args.memberId, checkEndpoint_(args.endpoint));
+    return { ok: true };
+  });
+}
+
+/** この端末にためしのお知らせを送る。args = {token, memberId, endpoint} */
+function pushTest(args) {
+  return guarded_('pushTest', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    const endpoint = checkEndpoint_(args.endpoint);
+    if (!pushReady_()) throw new Error('サーバーの通知の準備がまだです');
+    const m = getMembers_(sess.familyId).filter(function (x) { return x.id === args.memberId; })[0];
+    const sent = sendPush_([endpoint], '🔔 通知のテスト', (m ? m.name + 'さん、' : '') + 'この端末にお知らせが届きました', '#view=settings');
+    if (!sent) throw new Error('お知らせを送れませんでした。少し待ってもう一度ためしてください');
+    return { ok: true };
+  });
+}
+
+/** 管理者パネルのお知らせ（要望が届いたとき）。args = {adminKey, endpoint, device} */
+function adminPushSubscribe(args) {
+  return guarded_('adminPushSubscribe', function () {
+    requireAdmin_(args && args.adminKey);
+    upsertPushSub_('', PUSH_ADMIN, checkEndpoint_(args.endpoint), '', String(args.device || '').slice(0, 60));
+    return { ok: true, ready: pushReady_() };
+  });
+}
+
+/** args = {adminKey, endpoint} */
+function adminPushUnsubscribe(args) {
+  return guarded_('adminPushUnsubscribe', function () {
+    requireAdmin_(args && args.adminKey);
+    stopPushSub_('', PUSH_ADMIN, checkEndpoint_(args.endpoint));
+    return { ok: true };
+  });
+}
+
+/** 合図を受けた端末（Service Worker）が、自分あてのお知らせを取りに来る。ログイン不要（宛先のURLが鍵の代わり）。
+ *  args = {endpoint} → [{id, title, body, url}] */
+function getPushInbox(args) {
+  return guarded_('getPushInbox', function () {
+    const endpoint = checkEndpoint_(args && args.endpoint);
+    const from = Utilities.formatDate(new Date(Date.now() - PUSH_INBOX_DAYS * 86400000), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+    return withLock_(function () {
+      const now = nowStr_();
+      return readSheet_(SHEET_PUSH_MSG)
+        .filter(function (r) { return r['エンドポイント'] === endpoint && !r['受け取り日時'] && r['日時'] >= from; })
+        .map(function (r) {
+          updateRow_(SHEET_PUSH_MSG, HEAD_PUSH_MSG, r._row, { '受け取り日時': now });
+          return { id: r['通知ID'], title: r['タイトル'], body: r['本文'], url: r['開く場所'] };
+        });
+    });
+  });
+}
+
+/* ── 送る ─────────────────────────── */
+
+function activeSubs_(match) {
+  return readSheet_(SHEET_PUSH_SUB).filter(function (r) { return r['状態'] === ST_ACTIVE && match(r); });
+}
+
+/** 家庭の親（有効な人）全員に */
+function notifyParents_(familyId, title, body, url) {
+  const parents = {};
+  getMembers_(familyId).forEach(function (m) { if (m.role === ROLE_PARENT && m.active) parents[m.id] = true; });
+  notifySubs_(function (r) { return r['家庭ID'] === familyId && parents[r['メンバーID']]; }, title, body, url);
+}
+
+function notifyMember_(familyId, memberId, title, body, url) {
+  if (!memberId) return;
+  notifySubs_(function (r) { return r['家庭ID'] === familyId && r['メンバーID'] === memberId; }, title, body, url);
+}
+
+/** 要望チャットのそのスレッドの人に */
+function notifyThread_(threadId, title, body, url) {
+  notifySubs_(function (r) { return r['スレッドID'] === threadId; }, title, body, url);
+}
+
+function notifyAdmin_(title, body) {
+  notifySubs_(function (r) { return !r['家庭ID'] && r['メンバーID'] === PUSH_ADMIN; }, title, body, '');
+}
+
+/** お知らせは「おまけ」なので、失敗しても元の操作（申請・承認など）は止めない */
+function notifySubs_(match, title, body, url) {
+  try {
+    if (!pushReady_()) return;
+    const endpoints = activeSubs_(match).map(function (r) { return r['エンドポイント']; })
+      .filter(function (e, i, a) { return a.indexOf(e) === i; });
+    sendPush_(endpoints, title, body, url);
+  } catch (err) {
+    logError_('notify', err, '');
+  }
+}
+
+/** 中身を【通知】に置いてから合図を送る。もう使われていない宛先（404/410）は止める。届けられた数を返す */
+function sendPush_(endpoints, title, body, url) {
+  if (!pushReady_() || !endpoints.length) return 0;
+  const now = nowStr_();
+  let n = num_(nextId_(SHEET_PUSH_MSG, 'N').slice(1));
+  appendRows_(SHEET_PUSH_MSG, HEAD_PUSH_MSG, endpoints.map(function (e) {
+    return { '通知ID': 'N' + ('00000' + (n++)).slice(-5), '日時': now, 'エンドポイント': e,
+             'タイトル': String(title).slice(0, 80), '本文': String(body || '').slice(0, 200), '開く場所': url || '' };
+  }));
+  const res = UrlFetchApp.fetchAll(endpoints.map(function (e) {
+    return { url: e, method: 'post', payload: '', contentType: 'application/octet-stream', muteHttpExceptions: true,
+             headers: { 'TTL': '86400', 'Urgency': 'high', 'Authorization': vapidHeader_(e) } };
+  }));
+  let ok = 0;
+  const gone = [];
+  res.forEach(function (r, i) {
+    const code = r.getResponseCode();
+    if (code >= 200 && code < 300) ok++;
+    else if (code === 404 || code === 410) gone.push(endpoints[i]);
+    else logError_('sendPush', new Error(code + ' ' + String(r.getContentText()).slice(0, 200)), '');
+  });
+  if (gone.length) {
+    readSheet_(SHEET_PUSH_SUB).forEach(function (r) {
+      if (gone.indexOf(r['エンドポイント']) >= 0 && r['状態'] === ST_ACTIVE) {
+        updateRow_(SHEET_PUSH_SUB, HEAD_PUSH_SUB, r._row, { '状態': ST_CANCELED, '更新日時': now });
+      }
+    });
+  }
+  return ok;
+}
+
+/* ── VAPID の名札（ES256 で署名した JWT）────────────
+   GAS には楕円曲線の署名がないので、P-256 の計算をここで書く（BigInt）。
+   名札は12時間使い回す（毎回計算しなくてすむように、スクリプトのプロパティに置く） */
+
+function vapidHeader_(endpoint) {
+  const aud = endpoint.match(/^https:\/\/[^\/]+/)[0];
+  const props = PropertiesService.getScriptProperties();
+  const key = 'vapid:' + aud;
+  const cached = parseRequest_(props.getProperty(key));
+  const nowSec = Math.floor(Date.now() / 1000);
+  let jwt = cached && cached.exp - 3600 > nowSec ? cached.jwt : '';
+  if (!jwt) {
+    const exp = nowSec + 12 * 3600;
+    const input = b64uText_(JSON.stringify({ typ: 'JWT', alg: 'ES256' })) + '.' +
+                  b64uText_(JSON.stringify({ aud: aud, exp: exp, sub: VAPID_SUBJECT }));
+    jwt = input + '.' + b64uBytes_(p256Sign_(input, VAPID_PRIVATE_D));
+    props.setProperty(key, JSON.stringify({ jwt: jwt, exp: exp }));
+  }
+  return 'vapid t=' + jwt + ', k=' + VAPID_PUBLIC_KEY;
+}
+
+function b64uBytes_(bytes) {
+  return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, '');
+}
+
+function b64uText_(text) {
+  return b64uBytes_(Utilities.newBlob(text).getBytes());
+}
+
+const BIG0 = BigInt(0), BIG1 = BigInt(1), BIG2 = BigInt(2), BIG3 = BigInt(3);
+const P256 = {
+  p: BigInt('0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff'),
+  n: BigInt('0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551'),
+  g: [BigInt('0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296'),
+      BigInt('0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5')]
+};
+
+function bytesToBig_(bytes) {
+  let hex = '';
+  bytes.forEach(function (b) { hex += ('0' + ((b + 256) % 256).toString(16)).slice(-2); });
+  return BigInt('0x' + (hex || '0'));
+}
+
+function bigToBytes32_(x) {
+  const hex = ('0'.repeat(64) + x.toString(16)).slice(-64);
+  const out = [];
+  for (let i = 0; i < 64; i += 2) {
+    const v = parseInt(hex.substr(i, 2), 16);
+    out.push(v > 127 ? v - 256 : v);   // GAS の byte[] は -128〜127
+  }
+  return out;
+}
+
+function mod_(a, m) { const r = a % m; return r < BIG0 ? r + m : r; }
+
+/** 逆数（拡張ユークリッドの互除法） */
+function modInv_(a, m) {
+  let t = BIG0, newT = BIG1, r = m, newR = mod_(a, m);
+  while (newR !== BIG0) {
+    const q = r / newR;
+    let tmp = t - q * newT; t = newT; newT = tmp;
+    tmp = r - q * newR; r = newR; newR = tmp;
+  }
+  return mod_(t, m);
+}
+
+/** 曲線の上の点の足し算（null＝無限遠点） */
+function p256Add_(P, Q) {
+  const p = P256.p;
+  if (!P) return Q;
+  if (!Q) return P;
+  let l;
+  if (P[0] === Q[0]) {
+    if (mod_(P[1] + Q[1], p) === BIG0) return null;
+    l = mod_((BIG3 * P[0] * P[0] - BIG3) * modInv_(BIG2 * P[1], p), p);
+  } else {
+    l = mod_((Q[1] - P[1]) * modInv_(Q[0] - P[0], p), p);
+  }
+  const x = mod_(l * l - P[0] - Q[0], p);
+  return [x, mod_(l * (P[0] - x) - P[1], p)];
+}
+
+function p256Mul_(k, P) {
+  let R = null, A = P;
+  while (k > BIG0) {
+    if (k & BIG1) R = p256Add_(R, A);
+    A = p256Add_(A, A);
+    k >>= BIG1;
+  }
+  return R;
+}
+
+function sha256Big_(text) {
+  return bytesToBig_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8));
+}
+
+/** ECDSA P-256 / SHA-256 の署名（r と s を32バイトずつ並べた64バイト） */
+function p256Sign_(message, privateD) {
+  const n = P256.n;
+  const d = bytesToBig_(Utilities.base64DecodeWebSafe(privateD + '='.repeat((4 - privateD.length % 4) % 4)));
+  const z = sha256Big_(message);
+  for (let i = 0; ; i++) {
+    // k は毎回ちがう乱数（秘密鍵・本文・UUID から作る）
+    const k = mod_(sha256Big_(d.toString(16) + '|' + message + '|' + Utilities.getUuid() + '|' + i), n - BIG1) + BIG1;
+    const r = mod_(p256Mul_(k, P256.g)[0], n);
+    if (r === BIG0) continue;
+    const s = mod_(modInv_(k, n) * (z + r * d), n);
+    if (s === BIG0) continue;
+    return bigToBytes32_(r).concat(bigToBytes32_(s));
+  }
+}
+
+/* ── ルーチンのお知らせ（時間トリガー）────────── */
+
+/** ★最初に1回だけ、GASのエディタでこれを実行する（権限の許可と、5分ごとのトリガーの登録） */
+function setupNotifications() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'checkReminders') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('checkReminders').timeBased().everyMinutes(5).create();
+  ensureSchema_();
+  UrlFetchApp.fetch('https://fcm.googleapis.com/', { muteHttpExceptions: true });   // 外への通信の許可もここで聞いてもらう
+  Logger.log('通知の準備ができました（5分ごとに checkReminders）。秘密鍵：' + (pushReady_() ? 'あり' : '★Secret.gs がありません'));
+}
+
+/** 5分ごと。時刻になったルーチンを、対象の人（「みんな」なら子ども全員）に知らせる。今日もうやった人には送らない */
+function checkReminders() {
+  return guarded_('checkReminders', function () {
+    const today = todayStr_();
+    const hm = nowStr_().slice(11, 16);
+    const nowMin = num_(hm.slice(0, 2)) * 60 + num_(hm.slice(3));
+    const dow = String(new Date(today + 'T00:00:00Z').getUTCDay());
+    const due = readSheet_(SHEET_ROUTINE).filter(function (r) {
+      const at = r['通知時刻'];
+      if (!at || r['通知した日'] === today || !isTrue_(r['有効']) || r['承認状態'] === RT_UNAPPROVED) return false;
+      if (r['通知曜日'] && r['通知曜日'].indexOf(dow) < 0) return false;
+      const late = nowMin - (num_(at.slice(0, 2)) * 60 + num_(at.slice(3)));
+      return late >= 0 && late <= REMIND_WINDOW_MIN;
+    });
+    if (!due.length) return;
+    const doneToday = {};
+    readSheet_(SHEET_RUNLOG).forEach(function (r) {
+      if (r['実行日'] === today && r['状態'] === ST_ACTIVE) doneToday[r['メンバーID'] + '|' + r['ルーチンID']] = true;
+    });
+    withLock_(function () {
+      due.forEach(function (r) { updateRow_(SHEET_ROUTINE, HEAD_ROUTINE, r._row, { '通知した日': today }); });
+    });
+    due.forEach(function (r) {
+      getMembers_(r['家庭ID']).forEach(function (m) {
+        if (!m.active || (r['対象メンバーID'] ? m.id !== r['対象メンバーID'] : m.role !== ROLE_CHILD)) return;
+        if (doneToday[m.id + '|' + r['ルーチンID']]) return;
+        notifyMember_(r['家庭ID'], m.id, '⏰ ' + r['ルーチン名'] + 'の時間だよ', m.name + 'さん、はじめよう！', '#view=timer');
+      });
     });
   });
 }
@@ -2591,8 +2983,22 @@ function enterApp(){
   switchView(S.view);
   flushOutbox();
   checkChatUnread_();
+  pushResync_();
+  // お知らせをタップして開いたとき（URLの最後が #view=… / #chat）
+  const link = /^#(view=|chat$)/.test(location.hash) ? location.hash : '';
+  if (link) history.replaceState(null, '', location.pathname + location.search);
   if (load_('rt_run', null)) resumeRun();
+  else if (link) openLink_(link);
   else if (!load_(tourKey_(), false)) setTimeout(startTour, 400);   // PINの窓が閉じきってから
+}
+
+// アプリを開いたままお知らせをタップしたときは、Service Worker から行き先が届く
+if ('serviceWorker' in navigator){
+  navigator.serviceWorker.addEventListener('message', function(e){
+    if (!e.data || e.data.type !== 'open') return;
+    if (ADMIN_APP || location.hash === '#dev') return devList_();
+    if (S.me && !document.getElementById('main').classList.contains('hidden') && !load_('rt_run', null)) openLink_(e.data.hash);
+  });
 }
 
 async function logout(){
@@ -3844,7 +4250,7 @@ function renderSettings(){
     '<div class="btn-row"><button class="btn" onclick="openWho()">使う人を変える</button>' +
     (IS_LOCAL ? '' : '<button class="btn danger" onclick="logout()">ログアウト</button>') + '</div></div>' +
     '<div class="card"><h2>使い方</h2><button class="btn" onclick="startTour()">📖 使い方をもう一度見る</button></div>' +
-    bioCard_() + voiceCard_() + (IS_LOCAL ? backupCard_() : '');
+    pushCard_() + bioCard_() + voiceCard_() + (IS_LOCAL ? backupCard_() : '');
 
   if (isParent){
     const reqs = routineRequests_();
@@ -3897,6 +4303,7 @@ function routineItem_(r){
   else if (r.rejectReason) badge += ' <span class="badge ng">却下</span>';
   return '<div class="list-item"><div class="main"><div class="title">' + esc(shown.name) + badge + '</div>' +
     '<div class="sub">' + who + '・' + stepsText_(shown.steps) + '</div>' +
+    (remindText_(shown) ? '<div class="sub">' + remindText_(shown) + '</div>' : '') +
     (r.rejectReason ? '<div class="sub">理由：' + esc(r.rejectReason) + '（直してもう一度申請できます）</div>' : '') + '</div>' +
     '<div class="actions"><button class="btn tiny" onclick="editRoutine(\'' + r.id + '\')">編集</button></div></div>';
 }
@@ -4162,6 +4569,108 @@ function bioOff(){
   });
 }
 
+/* ── 通知（アプリを閉じていても届くお知らせ）────────────────
+   ブラウザの Web Push を使う。この端末の「宛先」をサーバーに登録すると、
+   承認待ち・承認の結果・ルーチンの時刻・チャットの返事が届く（中身は Service Worker がサーバーから取ってくる）。
+   人ごと・端末ごとの設定（rt_push_家庭名_メンバーID）。Offline版とGASのWebアプリ版では使えない */
+const VAPID_PUBLIC_KEY = 'BBYK5L3hZp88usHniF7cqNxWHYweGm6AYpmmi_sw4_8BaKk0qH5bTG3Li55IIpbAKL3AxsXf_0_vdmQ8gGS_sOM';
+
+function pushKey_(){ return 'rt_push_' + S.familyName + '_' + S.me; }
+function pushSupported_(){
+  return !IS_LOCAL && !!API_URL && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+function isIos_(){ return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+function isStandalone_(){ return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }
+function deviceName_(){
+  const ua = navigator.userAgent;
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) || isIos_() ? 'iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac/.test(ua) ? 'Mac' : 'その他';
+  const br = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : '';
+  return os + (br ? ' ' + br : '');
+}
+
+/** この端末の宛先（なければ create のときだけ作る） */
+async function pushSubscription_(create){
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub && create) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uDec_(VAPID_PUBLIC_KEY) });
+  return sub;
+}
+
+/** 通知の許可を聞いて、宛先を作る。だめなら理由つきでエラー */
+async function pushAsk_(){
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') throw new Error(perm === 'denied' ? '通知がブロックされています。スマホ（ブラウザ）の設定で、このアプリの通知を許可してください' : '通知の許可をやめました');
+  try{ return await pushSubscription_(true); }
+  catch(e){ throw new Error('この端末の通知を準備できませんでした：' + errText(e)); }
+}
+
+function pushCard_(){
+  if (IS_LOCAL || !API_URL) return '';
+  const head = '<div class="card"><h2>🔔 通知（この端末）</h2>';
+  if (!pushSupported_()){
+    return head + '<p class="muted">' + (isIos_() && !isStandalone_()
+      ? 'iPhone・iPadでは、Safariの共有ボタン →「ホーム画面に追加」で入れた Routine Bank から開くと、通知を使えます（iOS 16.4以上）。'
+      : 'このブラウザでは通知を使えません。Chrome・Edge・Safari の新しい版で開いてください。') + '</p></div>';
+  }
+  const me = member_(S.me);
+  const what = me.role === '親'
+    ? '子どもの交換・ルーチンの申請（承認待ち）、ルーチンの時刻（自分用のもの）、チャットの返事'
+    : '交換・ルーチンが承認／却下されたとき、ルーチンの時刻、チャットの返事';
+  if (Notification.permission === 'denied'){
+    return head + '<p class="muted">通知がブロックされています。スマホ（ブラウザ）の設定で、このアプリの通知を許可してから、もう一度開いてください。</p></div>';
+  }
+  const on = !!load_(pushKey_(), false) && Notification.permission === 'granted';
+  return head + '<p class="muted">' + (on ? '<b>オン</b>：' : 'オンにすると、アプリを閉じていても届きます：') + esc(what) +
+    '。この端末の' + esc(me.name) + 'だけの設定です。</p><div class="btn-row">' +
+    (on ? '<button class="btn" onclick="pushTestSend()">ためしに送る</button><button class="btn" onclick="pushOff()">オフにする</button>'
+        : '<button class="btn primary" onclick="pushOn()">オンにする</button>') + '</div></div>';
+}
+
+async function pushOn(){
+  try{
+    const sub = await pushAsk_();
+    const res = await gs('pushSubscribe', { token: S.token, memberId: S.me, endpoint: sub.endpoint, threadId: chatThreadId_(), device: deviceName_() });
+    save_(pushKey_(), true);
+    toast(res.ready ? '通知をオンにしました' : '通知をオンにしました（サーバーの準備ができたら届きます）', 'ok');
+    renderSettings();
+  }catch(err){ toastErr(err); }
+}
+
+async function pushTestSend(){
+  try{
+    const sub = await pushSubscription_(false);
+    if (!sub) throw new Error('この端末の通知の登録が消えています。オフにしてから、もう一度オンにしてください');
+    await gs('pushTest', { token: S.token, memberId: S.me, endpoint: sub.endpoint });
+    toast('送りました。数秒で届きます', 'ok');
+  }catch(err){ toastErr(err); }
+}
+
+async function pushOff(){
+  try{
+    const sub = await pushSubscription_(false);
+    if (sub) await gs('pushUnsubscribe', { token: S.token, memberId: S.me, endpoint: sub.endpoint });
+    save_(pushKey_(), null);
+    toast('この端末の' + member_(S.me).name + 'の通知をオフにしました', 'ok');
+    renderSettings();
+  }catch(err){ toastErr(err); }
+}
+
+/** 起動のたびに、宛先をサーバーに知らせ直す（ブラウザが宛先を作り直すことがあるため）。失敗しても気にしない */
+async function pushResync_(){
+  if (!pushSupported_() || !load_(pushKey_(), false) || Notification.permission !== 'granted') return;
+  try{
+    const sub = await pushSubscription_(true);
+    await gs('pushSubscribe', { token: S.token, memberId: S.me, endpoint: sub.endpoint, threadId: chatThreadId_(), device: deviceName_() });
+  }catch(e){ console.warn('通知の登録し直しに失敗', e); }
+}
+
+/** お知らせをタップしたときの行き先（'#view=bank'・'#chat' など） */
+function openLink_(hash){
+  const m = /^#view=(\w+)$/.exec(hash || '');
+  if (m && VIEWS.some(function(v){ return v.key === m[1]; })) switchView(m[1]);
+  else if (hash === '#chat') openChat();
+}
+
 function pinFailed_(err){
   if (/PIN/.test(errText(err))){ S.parentPin = ''; S.pinFor = ''; }
 }
@@ -4205,6 +4714,7 @@ function editRoutine(id){
       }).join('') + '</select></label>' : '') + note +
       '<label>表示順<input type="number" id="rtOrder" value="' + r.order + '"></label>' +
       '<label class="inline"><input type="checkbox" id="rtActive"' + (r.active ? ' checked' : '') + '> 使う（はずすと一覧に出ません）</label>' +
+      remindEdit_(r) +
       '<h2 style="margin-top:6px">動作（上から順番）</h2><div id="stepRows"></div>' +
       '<button type="button" class="btn tiny" onclick="addStepRow()">＋ 動作を追加</button></div>',
     ok: parent ? '保存' : '申請する',
@@ -4214,10 +4724,41 @@ function editRoutine(id){
         return { id: row.dataset.id, name: row.querySelector('.sn').value,
                  targetSec: (Number(row.querySelector('.sm').value) || 0) * 60 + (Number(row.querySelector('.ss').value) || 0) };
       });
-      return saveRoutine_({ routineId: r.id, name: val('rtName'), memberId: val('rtMember'),
-        order: Number(val('rtOrder')), active: document.getElementById('rtActive').checked, steps: steps });
+      return saveRoutine_(Object.assign({ routineId: r.id, name: val('rtName'), memberId: val('rtMember'),
+        order: Number(val('rtOrder')), active: document.getElementById('rtActive').checked, steps: steps }, remindValue_(r)));
     }
   });
+}
+
+/* ── ルーチンのお知らせ（時刻・曜日）────────
+   曜日は '12345' のように番号（0=日〜6=土）。空＝毎日。Offline版は通知がないので出さない */
+const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
+
+function remindEdit_(r){
+  if (IS_LOCAL) return '';
+  const days = r.remindDays || '0123456';
+  return '<label>⏰ お知らせの時刻（空ならお知らせしない）<input type="time" id="rtRemind" value="' + esc(r.remindAt || '') + '"></label>' +
+    '<div class="chips" id="rtDays">' + DAY_NAMES.map(function(n, i){
+      return '<button type="button" class="chip' + (days.indexOf(String(i)) >= 0 ? ' active' : '') + '" data-day="' + i + '" onclick="this.classList.toggle(\'active\')">' + n + '</button>';
+    }).join('') + '</div>' +
+    '<p class="muted" style="margin-top:-6px">その時刻に、やる人のスマホに「はじめよう」と届きます（「みんな」用なら子ども全員。今日もうやった人には送りません）。受け取る人は設定の「🔔 通知」をオンにしてね。</p>';
+}
+
+/** 画面の入力 → {remindAt, remindDays}。Offline版では今の値のまま */
+function remindValue_(r){
+  if (IS_LOCAL) return { remindAt: r.remindAt || '', remindDays: r.remindDays || '' };
+  const at = val('rtRemind');
+  const days = Array.prototype.map.call(document.querySelectorAll('#rtDays .chip.active'), function(b){ return b.dataset.day; }).join('');
+  if (at && !days) throw new Error('お知らせする曜日を1つ以上えらんでください');
+  return { remindAt: at, remindDays: days.length === 7 ? '' : days };
+}
+
+/** '07:00'・'12345' → '⏰ 7:00 平日' */
+function remindText_(r){
+  if (!r.remindAt) return '';
+  const d = r.remindDays || '';
+  const days = !d ? '毎日' : d === '12345' ? '平日' : d === '06' ? '土日' : d.split('').map(function(i){ return DAY_NAMES[i]; }).join('・');
+  return '⏰ ' + r.remindAt.replace(/^0/, '') + ' ' + days;
 }
 
 /** 自分が作ったルーチンはPINなし、ほかの人のものは親PINを聞いてから保存 */
@@ -4603,8 +5144,36 @@ async function devList_(){
           : '<span class="badge gray">取り消しのみ</span>') + '</div>' +   // 相手が全部取り消したときは needsReply が無い
         '<div class="preview">' + esc(t.lastText) + '</div>' +
         '<div class="muted" style="font-size:11.5px">' + esc(t.app) + '・' + esc(String(t.lastAt).slice(5, 16)) + '・' + t.count + '件</div></button>';
-    }).join('') +
+    }).join('') + devPushHtml_() +
     '<p class="chat-note"><a href="#" onclick="save_(\'rt_dev_key\', null); devAskKey_(\'\'); return false;">この端末からキーを消す</a></p>';
+}
+
+/** 要望が届いたら、この端末に通知（管理者パネル用。rt_dev_push） */
+function devPushHtml_(){
+  if (!pushSupported_()) return '';
+  const on = !!load_('rt_dev_push', false) && Notification.permission === 'granted';
+  return '<p class="chat-note">' + (on
+    ? '🔔 要望が届いたら通知します　<button class="btn tiny" onclick="devPushOff()">オフ</button>'
+    : '<button class="btn tiny primary" onclick="devPushOn()">🔔 要望が届いたら通知する</button>') + '</p>';
+}
+
+async function devPushOn(){
+  try{
+    const sub = await pushAsk_();
+    await devCall_('adminPushSubscribe', { endpoint: sub.endpoint, device: deviceName_() });
+    save_('rt_dev_push', true);
+    toast('この端末に通知します', 'ok');
+    devList_();
+  }catch(err){ toastErr(err); }
+}
+
+async function devPushOff(){
+  try{
+    const sub = await pushSubscription_(false);
+    if (sub) await devCall_('adminPushUnsubscribe', { endpoint: sub.endpoint });
+    save_('rt_dev_push', null);
+    devList_();
+  }catch(err){ toastErr(err); }
 }
 
 async function devOpen(i){

@@ -354,7 +354,7 @@ table.grid th{font-size:11.5px; color:var(--muted);}
 /* ── フォーム・ボタン ───────────────── */
 input,select,textarea,button{font-family:inherit; font-size:16px;}
 input[type=range],input[type=checkbox]{accent-color:var(--primary);}
-input[type=text],input[type=password],input[type=number],select,textarea{
+input[type=text],input[type=password],input[type=number],input[type=time],select,textarea{
   width:100%; padding:10px 12px; margin-top:4px;
   border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--text); min-height:var(--tap);
 }
@@ -926,8 +926,22 @@ function enterApp(){
   switchView(S.view);
   flushOutbox();
   checkChatUnread_();
+  pushResync_();
+  // お知らせをタップして開いたとき（URLの最後が #view=… / #chat）
+  const link = /^#(view=|chat$)/.test(location.hash) ? location.hash : '';
+  if (link) history.replaceState(null, '', location.pathname + location.search);
   if (load_('rt_run', null)) resumeRun();
+  else if (link) openLink_(link);
   else if (!load_(tourKey_(), false)) setTimeout(startTour, 400);   // PINの窓が閉じきってから
+}
+
+// アプリを開いたままお知らせをタップしたときは、Service Worker から行き先が届く
+if ('serviceWorker' in navigator){
+  navigator.serviceWorker.addEventListener('message', function(e){
+    if (!e.data || e.data.type !== 'open') return;
+    if (ADMIN_APP || location.hash === '#dev') return devList_();
+    if (S.me && !document.getElementById('main').classList.contains('hidden') && !load_('rt_run', null)) openLink_(e.data.hash);
+  });
 }
 
 async function logout(){
@@ -2179,7 +2193,7 @@ function renderSettings(){
     '<div class="btn-row"><button class="btn" onclick="openWho()">使う人を変える</button>' +
     (IS_LOCAL ? '' : '<button class="btn danger" onclick="logout()">ログアウト</button>') + '</div></div>' +
     '<div class="card"><h2>使い方</h2><button class="btn" onclick="startTour()">📖 使い方をもう一度見る</button></div>' +
-    bioCard_() + voiceCard_() + (IS_LOCAL ? backupCard_() : '');
+    pushCard_() + bioCard_() + voiceCard_() + (IS_LOCAL ? backupCard_() : '');
 
   if (isParent){
     const reqs = routineRequests_();
@@ -2232,6 +2246,7 @@ function routineItem_(r){
   else if (r.rejectReason) badge += ' <span class="badge ng">却下</span>';
   return '<div class="list-item"><div class="main"><div class="title">' + esc(shown.name) + badge + '</div>' +
     '<div class="sub">' + who + '・' + stepsText_(shown.steps) + '</div>' +
+    (remindText_(shown) ? '<div class="sub">' + remindText_(shown) + '</div>' : '') +
     (r.rejectReason ? '<div class="sub">理由：' + esc(r.rejectReason) + '（直してもう一度申請できます）</div>' : '') + '</div>' +
     '<div class="actions"><button class="btn tiny" onclick="editRoutine(\'' + r.id + '\')">編集</button></div></div>';
 }
@@ -2497,6 +2512,108 @@ function bioOff(){
   });
 }
 
+/* ── 通知（アプリを閉じていても届くお知らせ）────────────────
+   ブラウザの Web Push を使う。この端末の「宛先」をサーバーに登録すると、
+   承認待ち・承認の結果・ルーチンの時刻・チャットの返事が届く（中身は Service Worker がサーバーから取ってくる）。
+   人ごと・端末ごとの設定（rt_push_家庭名_メンバーID）。Offline版とGASのWebアプリ版では使えない */
+const VAPID_PUBLIC_KEY = 'BBYK5L3hZp88usHniF7cqNxWHYweGm6AYpmmi_sw4_8BaKk0qH5bTG3Li55IIpbAKL3AxsXf_0_vdmQ8gGS_sOM';
+
+function pushKey_(){ return 'rt_push_' + S.familyName + '_' + S.me; }
+function pushSupported_(){
+  return !IS_LOCAL && !!API_URL && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+function isIos_(){ return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+function isStandalone_(){ return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }
+function deviceName_(){
+  const ua = navigator.userAgent;
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) || isIos_() ? 'iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac/.test(ua) ? 'Mac' : 'その他';
+  const br = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : '';
+  return os + (br ? ' ' + br : '');
+}
+
+/** この端末の宛先（なければ create のときだけ作る） */
+async function pushSubscription_(create){
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub && create) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uDec_(VAPID_PUBLIC_KEY) });
+  return sub;
+}
+
+/** 通知の許可を聞いて、宛先を作る。だめなら理由つきでエラー */
+async function pushAsk_(){
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') throw new Error(perm === 'denied' ? '通知がブロックされています。スマホ（ブラウザ）の設定で、このアプリの通知を許可してください' : '通知の許可をやめました');
+  try{ return await pushSubscription_(true); }
+  catch(e){ throw new Error('この端末の通知を準備できませんでした：' + errText(e)); }
+}
+
+function pushCard_(){
+  if (IS_LOCAL || !API_URL) return '';
+  const head = '<div class="card"><h2>🔔 通知（この端末）</h2>';
+  if (!pushSupported_()){
+    return head + '<p class="muted">' + (isIos_() && !isStandalone_()
+      ? 'iPhone・iPadでは、Safariの共有ボタン →「ホーム画面に追加」で入れた Routine Bank から開くと、通知を使えます（iOS 16.4以上）。'
+      : 'このブラウザでは通知を使えません。Chrome・Edge・Safari の新しい版で開いてください。') + '</p></div>';
+  }
+  const me = member_(S.me);
+  const what = me.role === '親'
+    ? '子どもの交換・ルーチンの申請（承認待ち）、ルーチンの時刻（自分用のもの）、チャットの返事'
+    : '交換・ルーチンが承認／却下されたとき、ルーチンの時刻、チャットの返事';
+  if (Notification.permission === 'denied'){
+    return head + '<p class="muted">通知がブロックされています。スマホ（ブラウザ）の設定で、このアプリの通知を許可してから、もう一度開いてください。</p></div>';
+  }
+  const on = !!load_(pushKey_(), false) && Notification.permission === 'granted';
+  return head + '<p class="muted">' + (on ? '<b>オン</b>：' : 'オンにすると、アプリを閉じていても届きます：') + esc(what) +
+    '。この端末の' + esc(me.name) + 'だけの設定です。</p><div class="btn-row">' +
+    (on ? '<button class="btn" onclick="pushTestSend()">ためしに送る</button><button class="btn" onclick="pushOff()">オフにする</button>'
+        : '<button class="btn primary" onclick="pushOn()">オンにする</button>') + '</div></div>';
+}
+
+async function pushOn(){
+  try{
+    const sub = await pushAsk_();
+    const res = await gs('pushSubscribe', { token: S.token, memberId: S.me, endpoint: sub.endpoint, threadId: chatThreadId_(), device: deviceName_() });
+    save_(pushKey_(), true);
+    toast(res.ready ? '通知をオンにしました' : '通知をオンにしました（サーバーの準備ができたら届きます）', 'ok');
+    renderSettings();
+  }catch(err){ toastErr(err); }
+}
+
+async function pushTestSend(){
+  try{
+    const sub = await pushSubscription_(false);
+    if (!sub) throw new Error('この端末の通知の登録が消えています。オフにしてから、もう一度オンにしてください');
+    await gs('pushTest', { token: S.token, memberId: S.me, endpoint: sub.endpoint });
+    toast('送りました。数秒で届きます', 'ok');
+  }catch(err){ toastErr(err); }
+}
+
+async function pushOff(){
+  try{
+    const sub = await pushSubscription_(false);
+    if (sub) await gs('pushUnsubscribe', { token: S.token, memberId: S.me, endpoint: sub.endpoint });
+    save_(pushKey_(), null);
+    toast('この端末の' + member_(S.me).name + 'の通知をオフにしました', 'ok');
+    renderSettings();
+  }catch(err){ toastErr(err); }
+}
+
+/** 起動のたびに、宛先をサーバーに知らせ直す（ブラウザが宛先を作り直すことがあるため）。失敗しても気にしない */
+async function pushResync_(){
+  if (!pushSupported_() || !load_(pushKey_(), false) || Notification.permission !== 'granted') return;
+  try{
+    const sub = await pushSubscription_(true);
+    await gs('pushSubscribe', { token: S.token, memberId: S.me, endpoint: sub.endpoint, threadId: chatThreadId_(), device: deviceName_() });
+  }catch(e){ console.warn('通知の登録し直しに失敗', e); }
+}
+
+/** お知らせをタップしたときの行き先（'#view=bank'・'#chat' など） */
+function openLink_(hash){
+  const m = /^#view=(\w+)$/.exec(hash || '');
+  if (m && VIEWS.some(function(v){ return v.key === m[1]; })) switchView(m[1]);
+  else if (hash === '#chat') openChat();
+}
+
 function pinFailed_(err){
   if (/PIN/.test(errText(err))){ S.parentPin = ''; S.pinFor = ''; }
 }
@@ -2540,6 +2657,7 @@ function editRoutine(id){
       }).join('') + '</select></label>' : '') + note +
       '<label>表示順<input type="number" id="rtOrder" value="' + r.order + '"></label>' +
       '<label class="inline"><input type="checkbox" id="rtActive"' + (r.active ? ' checked' : '') + '> 使う（はずすと一覧に出ません）</label>' +
+      remindEdit_(r) +
       '<h2 style="margin-top:6px">動作（上から順番）</h2><div id="stepRows"></div>' +
       '<button type="button" class="btn tiny" onclick="addStepRow()">＋ 動作を追加</button></div>',
     ok: parent ? '保存' : '申請する',
@@ -2549,10 +2667,41 @@ function editRoutine(id){
         return { id: row.dataset.id, name: row.querySelector('.sn').value,
                  targetSec: (Number(row.querySelector('.sm').value) || 0) * 60 + (Number(row.querySelector('.ss').value) || 0) };
       });
-      return saveRoutine_({ routineId: r.id, name: val('rtName'), memberId: val('rtMember'),
-        order: Number(val('rtOrder')), active: document.getElementById('rtActive').checked, steps: steps });
+      return saveRoutine_(Object.assign({ routineId: r.id, name: val('rtName'), memberId: val('rtMember'),
+        order: Number(val('rtOrder')), active: document.getElementById('rtActive').checked, steps: steps }, remindValue_(r)));
     }
   });
+}
+
+/* ── ルーチンのお知らせ（時刻・曜日）────────
+   曜日は '12345' のように番号（0=日〜6=土）。空＝毎日。Offline版は通知がないので出さない */
+const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
+
+function remindEdit_(r){
+  if (IS_LOCAL) return '';
+  const days = r.remindDays || '0123456';
+  return '<label>⏰ お知らせの時刻（空ならお知らせしない）<input type="time" id="rtRemind" value="' + esc(r.remindAt || '') + '"></label>' +
+    '<div class="chips" id="rtDays">' + DAY_NAMES.map(function(n, i){
+      return '<button type="button" class="chip' + (days.indexOf(String(i)) >= 0 ? ' active' : '') + '" data-day="' + i + '" onclick="this.classList.toggle(\'active\')">' + n + '</button>';
+    }).join('') + '</div>' +
+    '<p class="muted" style="margin-top:-6px">その時刻に、やる人のスマホに「はじめよう」と届きます（「みんな」用なら子ども全員。今日もうやった人には送りません）。受け取る人は設定の「🔔 通知」をオンにしてね。</p>';
+}
+
+/** 画面の入力 → {remindAt, remindDays}。Offline版では今の値のまま */
+function remindValue_(r){
+  if (IS_LOCAL) return { remindAt: r.remindAt || '', remindDays: r.remindDays || '' };
+  const at = val('rtRemind');
+  const days = Array.prototype.map.call(document.querySelectorAll('#rtDays .chip.active'), function(b){ return b.dataset.day; }).join('');
+  if (at && !days) throw new Error('お知らせする曜日を1つ以上えらんでください');
+  return { remindAt: at, remindDays: days.length === 7 ? '' : days };
+}
+
+/** '07:00'・'12345' → '⏰ 7:00 平日' */
+function remindText_(r){
+  if (!r.remindAt) return '';
+  const d = r.remindDays || '';
+  const days = !d ? '毎日' : d === '12345' ? '平日' : d === '06' ? '土日' : d.split('').map(function(i){ return DAY_NAMES[i]; }).join('・');
+  return '⏰ ' + r.remindAt.replace(/^0/, '') + ' ' + days;
 }
 
 /** 自分が作ったルーチンはPINなし、ほかの人のものは親PINを聞いてから保存 */
@@ -2938,8 +3087,36 @@ async function devList_(){
           : '<span class="badge gray">取り消しのみ</span>') + '</div>' +   // 相手が全部取り消したときは needsReply が無い
         '<div class="preview">' + esc(t.lastText) + '</div>' +
         '<div class="muted" style="font-size:11.5px">' + esc(t.app) + '・' + esc(String(t.lastAt).slice(5, 16)) + '・' + t.count + '件</div></button>';
-    }).join('') +
+    }).join('') + devPushHtml_() +
     '<p class="chat-note"><a href="#" onclick="save_(\'rt_dev_key\', null); devAskKey_(\'\'); return false;">この端末からキーを消す</a></p>';
+}
+
+/** 要望が届いたら、この端末に通知（管理者パネル用。rt_dev_push） */
+function devPushHtml_(){
+  if (!pushSupported_()) return '';
+  const on = !!load_('rt_dev_push', false) && Notification.permission === 'granted';
+  return '<p class="chat-note">' + (on
+    ? '🔔 要望が届いたら通知します　<button class="btn tiny" onclick="devPushOff()">オフ</button>'
+    : '<button class="btn tiny primary" onclick="devPushOn()">🔔 要望が届いたら通知する</button>') + '</p>';
+}
+
+async function devPushOn(){
+  try{
+    const sub = await pushAsk_();
+    await devCall_('adminPushSubscribe', { endpoint: sub.endpoint, device: deviceName_() });
+    save_('rt_dev_push', true);
+    toast('この端末に通知します', 'ok');
+    devList_();
+  }catch(err){ toastErr(err); }
+}
+
+async function devPushOff(){
+  try{
+    const sub = await pushSubscription_(false);
+    if (sub) await devCall_('adminPushUnsubscribe', { endpoint: sub.endpoint });
+    save_('rt_dev_push', null);
+    devList_();
+  }catch(err){ toastErr(err); }
 }
 
 async function devOpen(i){
