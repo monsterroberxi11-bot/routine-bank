@@ -628,7 +628,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
     <div class="run-sub">
       <button class="btn" onclick="reorderRun()">↕ 今日の順番</button>
       <button class="btn" onclick="addTodayStep()">＋ 今日だけ</button>
-      <button class="btn" onclick="restartRun()">↺ 最初から</button>
+      <button class="btn" onclick="restartRun()">↺ やり直す</button>
     </div>
     <div class="run-upcoming" id="runUpcoming"></div>
   </div>
@@ -3455,16 +3455,20 @@ function reorderRun(){
   });
 }
 
-/** 実行中のルーチンを記録せずに1つめからやり直す。子どものズルを防ぐため親のPINが必要 */
+/** 今の動作だけタイマーを0に戻してやり直す（終わった動作の記録はそのまま）。子どものズルを防ぐため親のPINが必要 */
 async function restartRun(){
   if (!R || R.askingReason) return;
-  if (!(await askParentPinOnce_('↺ 最初からやり直す', 'ここまでの記録は保存せずに、1つめの動作からやり直します。'))) return;
-  R.runId = uuid_();
-  R.idx = 0;
-  R.results = [];
-  R.askingReason = false;
-  startStep_();
+  const name = R.steps[R.idx].name;
+  if (!(await askParentPinOnce_('↺ この動作をやり直す', '「' + name + '」のタイマーを0に戻して、最初からやり直します。ほかの動作の記録は変わりません。'))) return;
+  if (!R || R.askingReason) return;
+  R.stepStart = Date.now();
+  R.pausedAt = null;
+  R.pausedMs = 0;
+  R.alerted = false;
+  R.refillAt = Date.now();
+  persistRun_();
   renderRun_();
+  speak('もう一回、' + name + '。目標' + speakDur_(R.steps[R.idx].targetSec));
 }
 
 /** 親のPINをその場で1回だけ確認する（覚えておかない＝次のときもまた聞く）。OKなら true */
@@ -4890,7 +4894,7 @@ function tourStepsFor_(parent){
     { view: 'timer', el: tourEl_('#showRemaining'), parentEl: true, title: '🙈 残り時間をかくす',
       text: 'オフにすると残り時間が見えない「体内時計モード」。どっちが早くできるかは「分析」でくらべられます。' },
     { view: 'timer', title: '↕ 実行中にできること',
-      text: '実行画面では「一時停止」「とばす」のほかに、「今日の順番」で今日だけ動作の順番を変えられます。「最初から」でやり直すには親のPINが必要です。' },
+      text: '実行画面では「一時停止」「とばす」のほかに、「今日の順番」で今日だけ動作の順番を変えられます。「やり直す」で今の動作のタイマーを0に戻すには親のPINが必要です。' },
     { el: tourTab_('bank'), title: '🎮 貯金を交換する',
       text: parent ? '子どもの交換申請（ゲーム時間など）はここに届きます。承認すると貯金から引かれます。'
                    : '貯めた時間は、ゲーム時間などと交換できます。交換するには親の承認が必要です。' },
