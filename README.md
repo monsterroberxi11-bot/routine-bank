@@ -32,4 +32,6 @@
 
 中学生が、家族で使うために作りました。要望はアプリの中の 💬「要望」ボタンから送れます。
 
+同じ作者のアプリ：[家事ポイント](https://github.com/monsterroberxi11-bot/kaji-points)（お手伝いでポイントがたまる家族アプリ）
+
 使っているもの：Google Apps Script・HTML/CSS/JavaScript（PWA）・GitHub Pages
