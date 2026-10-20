@@ -240,6 +240,21 @@ main{padding:12px 12px 90px; max-width:900px; margin:0 auto;}
 }
 .routine .name{font-weight:800; font-size:16px;}
 .routine .sub{font-size:12.5px; color:var(--muted);}
+/* スマホの設定画面によくある、左右にスライドするスイッチ */
+.toggle-row{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:6px 0; margin-bottom:6px; font-weight:700; cursor:pointer;}
+.toggle{position:relative; flex:none; width:52px; height:32px;}
+.toggle input{position:absolute; opacity:0; width:100%; height:100%; margin:0; cursor:pointer; z-index:1;}
+.toggle .slider{position:absolute; inset:0; border-radius:999px; background:#cfd8d8; transition:background .2s;}
+.toggle .slider::before{content:''; position:absolute; top:3px; left:3px; width:26px; height:26px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25); transition:transform .2s;}
+.toggle input:checked + .slider{background:#34c759;}
+.toggle input:checked + .slider::before{transform:translateX(20px);}
+.toggle input:focus-visible + .slider{outline:2px solid var(--primary); outline-offset:2px;}
+/* お知らせ */
+.notice-item{padding:10px 0; border-bottom:1px solid var(--line);}
+.notice-item:last-child{border-bottom:0;}
+.notice-item .title{font-weight:800;}
+.notice-item p{margin:6px 0; white-space:pre-wrap;}
+.notice-item.canceled{opacity:.55;}
 .switch{display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; color:var(--muted); cursor:pointer;}
 .switch input{width:18px; height:18px; margin:0;}
 
@@ -975,6 +990,7 @@ const SHEET_FEEDBACK = '要望';
 const SHEET_INTEREST = '利息';
 const SHEET_BANK     = '銀行';
 const SHEET_STREAK_BONUS = '連続ボーナス';
+const SHEET_NOTICE   = '開発者のお知らせ';
 
 // ── 各シートの見出し（列を増やすときは必ず末尾に足す）───────────────
 // 週の利率：時間貯金に毎週付ける利息の％（空なら INTEREST_DEFAULT_RATE。0なら利息はお休み）
@@ -1042,16 +1058,21 @@ const HEAD_PUSH_MSG  = ['通知ID', '日時', 'エンドポイント', 'タイ�
 const PUSH_ADMIN = '管理者';
 // 連続ボーナス。1行＝1人が1つのバッジでもらった分（1人1バッジ1回だけ）。秒は時間貯金（手元）に足す
 const HEAD_STREAK_BONUS = ['ボーナスID', '家庭ID', 'メンバーID', 'メンバー名', '日数', '秒', '付けた日時'];
+// 開発者のお知らせ。管理者パネルから全員に送る。送り先＝NOTICE_TARGETS の名前。
+// 【取り消し】＝取り消した日時（行は消さない。取り消したお知らせはアプリに出なくなる）
+const HEAD_NOTICE = ['お知らせID', '日時', '送り先', 'タイトル', '本文', '通知', '取り消し'];
+const NOTICE_TARGETS = { all: 'みんな', rb: 'Routine Bank', kaji: '家事ポイント' };
 
 const ALL_SHEETS = [
   [SHEET_FAMILY, HEAD_FAMILY], [SHEET_SESSION, HEAD_SESSION], [SHEET_MEMBER, HEAD_MEMBER],
   [SHEET_ROUTINE, HEAD_ROUTINE], [SHEET_STEP, HEAD_STEP], [SHEET_REWARD, HEAD_REWARD],
   [SHEET_RUNLOG, HEAD_RUNLOG], [SHEET_EXCHANGE, HEAD_EXCHANGE], [SHEET_ERRORLOG, HEAD_ERRORLOG],
   [SHEET_FEEDBACK, HEAD_FEEDBACK], [SHEET_INTEREST, HEAD_INTEREST], [SHEET_BANK, HEAD_BANK],
-  [SHEET_PUSH_SUB, HEAD_PUSH_SUB], [SHEET_PUSH_MSG, HEAD_PUSH_MSG], [SHEET_STREAK_BONUS, HEAD_STREAK_BONUS]
+  [SHEET_PUSH_SUB, HEAD_PUSH_SUB], [SHEET_PUSH_MSG, HEAD_PUSH_MSG], [SHEET_STREAK_BONUS, HEAD_STREAK_BONUS],
+  [SHEET_NOTICE, HEAD_NOTICE]
 ];
 // 見出しを変えたらこの番号を上げる → 次の呼び出しで自動的にシートが整う
-const SCHEMA_VERSION = '13';
+const SCHEMA_VERSION = '14';
 
 // ── 状態 ────────────────────────────────
 const ROLE_PARENT = '親';
@@ -1098,6 +1119,7 @@ const API_FUNCTIONS = {
   adminListThreads: adminListThreads, adminGetThread: adminGetThread, adminReply: adminReply,
   adminDeleteThread: adminDeleteThread, setInterestRate: setInterestRate, setStreakWeekends: setStreakWeekends,
   setStreakBonus: setStreakBonus,
+  getNotices: getNotices, adminPostNotice: adminPostNotice, adminListNotices: adminListNotices, adminCancelNotice: adminCancelNotice,
   bankDeposit: bankDeposit, bankWithdraw: bankWithdraw,
   setAtmPin: setAtmPin, verifyAtmPin: verifyAtmPin, resetAtmPin: resetAtmPin,
   pushSubscribe: pushSubscribe, pushUnsubscribe: pushUnsubscribe, pushTest: pushTest, getPushInbox: getPushInbox,
@@ -2543,6 +2565,75 @@ function adminReply(args) {
 }
 
 
+/* ── 開発者のお知らせ（管理者パネルから送る → アプリを開いたときに出る）──────────
+   Routine Bank（Offline版も）と家事ポイントの両方が、ここから読む。ログイン不要（だれが見てもよい内容だけ書く） */
+
+const NOTICE_MAX_TITLE = 60;
+const NOTICE_MAX_BODY = 1000;
+
+function noticeItem_(r) {
+  return { id: r['お知らせID'], at: r['日時'], target: r['送り先'], title: r['タイトル'], body: r['本文'],
+           push: r['通知'] === 'はい', canceled: !!String(r['取り消し'] || '').trim() };
+}
+
+/** アプリ用：そのアプリあての、取り消していないお知らせ（新しい順・30件まで）。args = {app: 'rb'|'kaji'} */
+function getNotices(args) {
+  return guarded_('getNotices', function () {
+    const mine = NOTICE_TARGETS[args && args.app];
+    if (!mine || mine === NOTICE_TARGETS.all) throw new Error('アプリの名前が正しくありません');
+    return readSheet_(SHEET_NOTICE)
+      .map(noticeItem_)
+      .filter(function (n) { return n.id && !n.canceled && (n.target === mine || n.target === NOTICE_TARGETS.all); })
+      .map(function (n) { return { id: n.id, at: n.at, title: n.title, body: n.body }; })
+      .reverse().slice(0, 30);
+  });
+}
+
+/** 管理者パネル用：送ったお知らせ全部（取り消したものも、新しい順）。args = {adminKey} */
+function adminListNotices(args) {
+  return guarded_('adminListNotices', function () {
+    requireAdmin_(args && args.adminKey);
+    return readSheet_(SHEET_NOTICE).map(noticeItem_).filter(function (n) { return n.id; }).reverse();
+  });
+}
+
+/** お知らせを送る。push なら Routine Bank で通知をオンにしている端末にも届ける（家事ポイントには通知のしくみがない）。
+ *  args = {adminKey, target: 'all'|'rb'|'kaji', title, body, push} */
+function adminPostNotice(args) {
+  return guarded_('adminPostNotice', function () {
+    requireAdmin_(args && args.adminKey);
+    const target = NOTICE_TARGETS[args.target];
+    if (!target) throw new Error('送り先をえらんでください');
+    const title = String(args.title || '').trim();
+    const body = String(args.body || '').trim();
+    if (!title) throw new Error('タイトルを入れてください');
+    if (title.length > NOTICE_MAX_TITLE) throw new Error('タイトルは' + NOTICE_MAX_TITLE + '文字以内にしてください');
+    if (body.length > NOTICE_MAX_BODY) throw new Error('本文は' + NOTICE_MAX_BODY + '文字以内にしてください');
+    const push = !!args.push && target !== NOTICE_TARGETS.kaji;
+    withLock_(function () {
+      appendRow_(SHEET_NOTICE, HEAD_NOTICE, { 'お知らせID': nextId_(SHEET_NOTICE, 'O'), '日時': nowStr_(), '送り先': target,
+        'タイトル': title, '本文': body, '通知': push ? 'はい' : '', '取り消し': '' });
+    });
+    // 家庭の人の端末だけ（管理者パネルの端末には送らない）
+    if (push) notifySubs_(function (r) { return !!r['家庭ID'] && r['メンバーID'] !== PUSH_ADMIN; }, '📢 ' + title, body, '#notice');
+    return { message: push ? 'お知らせを送りました（通知も送りました）' : 'お知らせを送りました' };
+  });
+}
+
+/** お知らせを取り消す（行は残す。アプリに出なくなる。もう届いた通知は消せない）。args = {adminKey, noticeId} */
+function adminCancelNotice(args) {
+  return guarded_('adminCancelNotice', function () {
+    requireAdmin_(args && args.adminKey);
+    return withLock_(function () {
+      const r = readSheet_(SHEET_NOTICE).filter(function (x) { return x['お知らせID'] === args.noticeId; })[0];
+      if (!r) throw new Error('このお知らせが見つかりません');
+      if (!String(r['取り消し'] || '').trim()) updateRow_(SHEET_NOTICE, HEAD_NOTICE, r._row, { '取り消し': nowStr_() });
+      return { message: 'お知らせを取り消しました' };
+    });
+  });
+}
+
+
 
 /* ============================================================
  *  11. 通知（Web Push）
@@ -3137,11 +3228,12 @@ function enterApp(){
   checkChatUnread_();
   pushResync_();
   // お知らせをタップして開いたとき（URLの最後が #view=… / #chat）
-  const link = /^#(view=|chat$)/.test(location.hash) ? location.hash : '';
+  const link = /^#(view=|chat$|notice$)/.test(location.hash) ? location.hash : '';
   if (link) history.replaceState(null, '', location.pathname + location.search);
   if (load_('rt_run', null)) resumeRun();
   else if (link) openLink_(link);
   else if (!load_(tourKey_(), false)) setTimeout(startTour, 400);   // PINの窓が閉じきってから
+  else checkNotices_();
 }
 
 // アプリを開いたままお知らせをタップしたときは、Service Worker から行き先が届く
@@ -4450,7 +4542,8 @@ function renderSettings(){
   let html = '<div class="card"><h2>この端末</h2><p>家庭：<b>' + esc(S.familyName) + '</b>　使う人：<b>' + esc(me.name) + '</b></p>' +
     '<div class="btn-row"><button class="btn" onclick="openWho()">使う人を変える</button>' +
     (IS_LOCAL ? '' : '<button class="btn danger" onclick="logout()">ログアウト</button>') + '</div></div>' +
-    '<div class="card"><h2>使い方</h2><button class="btn" onclick="startTour()">📖 使い方をもう一度見る</button></div>' +
+    '<div class="card"><h2>使い方</h2><div class="btn-row"><button class="btn" onclick="startTour()">📖 使い方をもう一度見る</button>' +
+      '<button class="btn" onclick="openNotices()">📢 お知らせ</button></div></div>' +
     pushCard_() + bioCard_() + voiceCard_() + (IS_LOCAL ? backupCard_() : '');
 
   if (isParent){
@@ -4830,10 +4923,16 @@ function pushCard_(){
     return head + '<p class="muted">通知がブロックされています。スマホ（ブラウザ）の設定で、このアプリの通知を許可してから、もう一度開いてください。</p></div>';
   }
   const on = !!load_(pushKey_(), false) && Notification.permission === 'granted';
-  return head + '<p class="muted">' + (on ? '<b>オン</b>：' : 'オンにすると、アプリを閉じていても届きます：') + esc(what) +
-    '。この端末の' + esc(me.name) + 'だけの設定です。</p><div class="btn-row">' +
-    (on ? '<button class="btn" onclick="pushTestSend()">ためしに送る</button><button class="btn" onclick="pushOff()">オフにする</button>'
-        : '<button class="btn primary" onclick="pushOn()">オンにする</button>') + '</div></div>';
+  return head + toggle_(on, 'this.checked ? pushOn() : pushOff()', '通知を受け取る') +
+    '<p class="muted">' + (on ? '' : 'オンにすると、アプリを閉じていても届きます：') + esc(what) +
+    '。この端末の' + esc(me.name) + 'だけの設定です。</p>' +
+    (on ? '<button class="btn" onclick="pushTestSend()">ためしに送る</button>' : '') + '</div>';
+}
+
+/** スマホの設定画面によくある、左右にスライドするスイッチ */
+function toggle_(on, onchange, label){
+  return '<label class="toggle-row"><span>' + esc(label) + '</span><span class="toggle"><input type="checkbox"' + (on ? ' checked' : '') +
+    ' onchange="' + onchange + '"><span class="slider"></span></span></label>';
 }
 
 async function pushOn(){
@@ -4843,7 +4942,7 @@ async function pushOn(){
     save_(pushKey_(), true);
     toast(res.ready ? '通知をオンにしました' : '通知をオンにしました（サーバーの準備ができたら届きます）', 'ok');
     renderSettings();
-  }catch(err){ toastErr(err); }
+  }catch(err){ toastErr(err); renderSettings(); }   // うまくいかなかったらスイッチを戻す
 }
 
 async function pushTestSend(){
@@ -4862,7 +4961,7 @@ async function pushOff(){
     save_(pushKey_(), null);
     toast('この端末の' + member_(S.me).name + 'の通知をオフにしました', 'ok');
     renderSettings();
-  }catch(err){ toastErr(err); }
+  }catch(err){ toastErr(err); renderSettings(); }
 }
 
 /** 起動のたびに、宛先をサーバーに知らせ直す（ブラウザが宛先を作り直すことがあるため）。失敗しても気にしない */
@@ -4879,6 +4978,7 @@ function openLink_(hash){
   const m = /^#view=(\w+)$/.exec(hash || '');
   if (m && VIEWS.some(function(v){ return v.key === m[1]; })) switchView(m[1]);
   else if (hash === '#chat') openChat();
+  else if (hash === '#notice') openNotices();
 }
 
 function pinFailed_(err){
@@ -5290,6 +5390,39 @@ function markChatSeen_(){
   show('chatDot', false);
 }
 
+/* ── 開発者のお知らせ（管理者パネルから送られてくる）──────────
+   起動したときに、まだ見ていない新しいお知らせがあれば1つ出す。設定の「📢 お知らせ」でいつでも見返せる。
+   見たかどうかは端末に覚えておく（rt_notice_seen＝いちばん新しいお知らせID） */
+let notices = [];
+
+async function loadNotices_(){
+  notices = await feedbackCall_('getNotices', { app: 'rb' });
+  return notices;
+}
+
+async function checkNotices_(){
+  try{ await loadNotices_(); }catch(e){ return; }   // 圏外などは気にしない
+  const latest = notices[0];
+  if (!latest || load_('rt_notice_seen', '') === latest.id) return;
+  if (!document.getElementById('modal').classList.contains('hidden') || !document.getElementById('runScreen').classList.contains('hidden')) return;
+  save_('rt_notice_seen', latest.id);
+  openModal({ title: '📢 ' + latest.title, body: noticeHtml_(latest, false), ok: 'とじる', cancel: 'お知らせ一覧',
+    onCancel: function(){ setTimeout(openNotices, 0); } });
+}
+
+function noticeHtml_(n, withTitle){
+  return '<div class="notice-item">' + (withTitle ? '<div class="title">' + esc(n.title) + '</div>' : '') +
+    '<div class="muted">' + esc(String(n.at).slice(0, 16)) + '</div><p>' + esc(n.body) + '</p></div>';
+}
+
+async function openNotices(){
+  openModal({ title: '📢 お知らせ', body: '<p class="muted">読み込み中…</p>', ok: 'とじる', cancel: false });
+  try{ await loadNotices_(); }catch(err){ document.getElementById('modalBody').innerHTML = '<p class="muted">⚠️ ' + esc(errText(err)) + '</p>'; return; }
+  if (notices.length) save_('rt_notice_seen', notices[0].id);
+  document.getElementById('modalBody').innerHTML = notices.length
+    ? notices.map(function(n){ return noticeHtml_(n, true); }).join('') : '<p class="muted">お知らせはまだありません</p>';
+}
+
 /** 起動したときに、まだ見ていない返事があれば 💬 に印を付ける */
 async function checkChatUnread_(){
   show('chatDot', false);   // 人を切りかえたときに、前の人の印を残さない
@@ -5341,6 +5474,7 @@ function devSaveKey(){
 
 async function devList_(){
   devThreadId = '';
+  devNoticeMode = false;
   show('devForm', false);
   document.getElementById('devTitle').textContent = '管理者パネル';
   document.getElementById('devBackBtn').textContent = '← アプリへ';
@@ -5355,7 +5489,8 @@ async function devList_(){
     return;
   }
   const waiting = devThreads.filter(function(t){ return t.needsReply; }).length;
-  body.innerHTML = '<p class="chat-note">' + devThreads.length + '件のやりとり・未返信 ' + waiting + '件</p>' +
+  body.innerHTML = '<button class="btn primary block" style="margin-bottom:10px" onclick="devNotices_()">📢 お知らせを送る</button>' +
+    '<p class="chat-note">' + devThreads.length + '件のやりとり・未返信 ' + waiting + '件</p>' +
     devThreads.map(function(t, i){
       return '<button class="thread-item" onclick="devOpen(' + i + ')"><div class="top"><span class="name">' +
         esc(t.name || '名前なし') + (t.familyName ? '（' + esc(t.familyName) + '）' : '') + '</span>' +
@@ -5372,9 +5507,7 @@ async function devList_(){
 function devPushHtml_(){
   if (!pushSupported_()) return '';
   const on = !!load_('rt_dev_push', false) && Notification.permission === 'granted';
-  return '<p class="chat-note">' + (on
-    ? '🔔 要望が届いたら通知します　<button class="btn tiny" onclick="devPushOff()">オフ</button>'
-    : '<button class="btn tiny primary" onclick="devPushOn()">🔔 要望が届いたら通知する</button>') + '</p>';
+  return '<div class="card">' + toggle_(on, 'this.checked ? devPushOn() : devPushOff()', '🔔 要望が届いたら通知する') + '</div>';
 }
 
 async function devPushOn(){
@@ -5384,7 +5517,7 @@ async function devPushOn(){
     save_('rt_dev_push', true);
     toast('この端末に通知します', 'ok');
     devList_();
-  }catch(err){ toastErr(err); }
+  }catch(err){ toastErr(err); devList_(); }   // うまくいかなかったらスイッチを戻す
 }
 
 async function devPushOff(){
@@ -5393,7 +5526,72 @@ async function devPushOff(){
     if (sub) await devCall_('adminPushUnsubscribe', { endpoint: sub.endpoint });
     save_('rt_dev_push', null);
     devList_();
-  }catch(err){ toastErr(err); }
+  }catch(err){ toastErr(err); devList_(); }
+}
+
+/* ── お知らせを送る（管理者パネル）──────────
+   送ったお知らせは、アプリを開いたときに出る。Routine Bank は通知（🔔オンの人）でも届けられる */
+let devNoticeMode = false;
+let devNoticeList = [];
+
+async function devNotices_(){
+  devNoticeMode = true;
+  devThreadId = '';
+  show('devForm', false);
+  document.getElementById('devTitle').textContent = '📢 お知らせ';
+  document.getElementById('devBackBtn').textContent = '← 一覧';
+  show('devBackBtn', true);
+  const body = document.getElementById('devBody');
+  body.innerHTML = '<div class="card"><h2>新しいお知らせ</h2><div class="form">' +
+      '<label>送り先<select id="ntTarget" onchange="devNoticePushRow_()"><option value="all">みんな（Routine Bank と 家事ポイント）</option>' +
+        '<option value="rb">Routine Bank だけ</option><option value="kaji">家事ポイント だけ</option></select></label>' +
+      '<label>タイトル<input type="text" id="ntTitle" maxlength="60" placeholder="例：新しい機能を追加しました"></label>' +
+      '<label>本文<textarea id="ntBody" rows="5" maxlength="1000" placeholder="くわしい説明（なくてもOK）"></textarea></label></div>' +
+      '<div id="ntPushRow">' + toggle_(true, '', '🔔 通知でも送る（Routine Bank で通知をオンにしている人）') + '</div>' +
+      '<button class="btn primary block" onclick="devPostNotice()">送る</button></div>' +
+    '<div class="card"><h2>送ったお知らせ</h2><div id="ntList"><p class="muted">読み込み中…</p></div></div>';
+  try{
+    devNoticeList = await devCall_('adminListNotices', {});
+    devRenderNoticeList_();
+  }catch(err){ document.getElementById('ntList').innerHTML = '<p class="muted">⚠️ ' + esc(errText(err)) + '</p>'; }
+}
+
+/** 家事ポイントだけに送るときは通知のしくみがないので、スイッチを出さない */
+function devNoticePushRow_(){
+  show('ntPushRow', val('ntTarget') !== 'kaji');
+}
+
+function devRenderNoticeList_(){
+  document.getElementById('ntList').innerHTML = devNoticeList.length ? devNoticeList.map(function(n, i){
+    return '<div class="notice-item' + (n.canceled ? ' canceled' : '') + '"><div class="title">' + esc(n.title) +
+      (n.canceled ? ' <span class="badge gray">取り消し</span>' : '') + '</div>' +
+      '<div class="muted">' + esc(String(n.at).slice(0, 16)) + '・' + esc(n.target) + (n.push ? '・🔔通知あり' : '') + '</div>' +
+      (n.body ? '<p>' + esc(n.body) + '</p>' : '') +
+      (n.canceled ? '' : '<button class="btn tiny danger" onclick="devCancelNotice(' + i + ')">取り消す</button>') + '</div>';
+  }).join('') : '<p class="muted">まだ送っていません</p>';
+}
+
+function devPostNotice(){
+  const title = val('ntTitle');
+  if (!title) return toast('タイトルを入れてください', 'err');
+  const target = val('ntTarget');
+  const pushBox = document.querySelector('#ntPushRow input');
+  const push = target !== 'kaji' && pushBox.checked;
+  const where = { all: 'Routine Bank と 家事ポイント のみんな', rb: 'Routine Bank のみんな', kaji: '家事ポイント のみんな' }[target];
+  confirmModal('お知らせを送る？', where + 'に「' + title + '」を送ります。' + (push ? '通知もとどきます。' : ''), '送る', async function(){
+    const res = await devCall_('adminPostNotice', { target: target, title: title, body: val('ntBody'), push: push });
+    toast(res.message, 'ok');
+    devNotices_();
+  });
+}
+
+function devCancelNotice(i){
+  const n = devNoticeList[i];
+  confirmModal('「' + n.title + '」を取り消す？', 'アプリのお知らせに出なくなります（もう届いた通知は消せません）。', '取り消す', async function(){
+    const res = await devCall_('adminCancelNotice', { noticeId: n.id });
+    toast(res.message, 'ok');
+    devNotices_();
+  });
 }
 
 async function devOpen(i){
@@ -5477,12 +5675,13 @@ async function devSend(){
 }
 
 function devBack(){
-  if (devThreadId) return devList_();
+  if (devThreadId || devNoticeMode) return devList_();
   history.replaceState(null, '', location.pathname + location.search);
   location.reload();
 }
 
 function devRefresh(){
+  if (devNoticeMode) return devNotices_();
   if (!devThreadId) return devList_();
   const i = devThreads.findIndex(function(t){ return t.threadId === devThreadId; });
   if (i >= 0) devOpen(i);
@@ -5558,6 +5757,7 @@ function openModal(opts){
   const cancelBtn = document.getElementById('modalCancel');
   okBtn.textContent = opts.ok || 'OK';
   cancelBtn.textContent = opts.cancel || 'やめる';
+  cancelBtn.classList.toggle('hidden', opts.cancel === false);   // false なら「やめる」を出さない
   okBtn.disabled = false;
   okBtn.onclick = async function(){
     okBtn.disabled = true;
