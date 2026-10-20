@@ -161,6 +161,11 @@ main{padding:12px 12px 90px; max-width:900px; margin:0 auto;}
 .streak-badge.got{background:#fff3d6; color:#9a6200; filter:none; opacity:1;}
 .done-streak{font-size:20px; margin:10px 0 4px; color:#ffd36b;}
 .done-streak .got-badge{font-size:16px; margin-top:4px;}
+.streak-next{margin-top:6px;}
+.bonus-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; margin:8px 0 12px;}
+.bonus-grid label{display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:13.5px; font-weight:700;}
+.bonus-grid label span{display:flex; align-items:center; gap:4px; font-weight:400;}
+.bonus-grid input{width:64px;}
 .bank-mini.ginko{background:linear-gradient(135deg, #2f5d8a, #1d3f63);}
 
 /* 銀行タブ（ATM）*/
@@ -969,11 +974,13 @@ const SHEET_ERRORLOG = 'エラーログ';
 const SHEET_FEEDBACK = '要望';
 const SHEET_INTEREST = '利息';
 const SHEET_BANK     = '銀行';
+const SHEET_STREAK_BONUS = '連続ボーナス';
 
 // ── 各シートの見出し（列を増やすときは必ず末尾に足す）───────────────
 // 週の利率：時間貯金に毎週付ける利息の％（空なら INTEREST_DEFAULT_RATE。0なら利息はお休み）
 // 土日も数える：連続記録で、土日にやらなかった日も「切れた」にするか。空＝しない（土日はお休み）／「はい」＝する
-const HEAD_FAMILY   = ['家庭ID', '家庭名', 'パスワードハッシュ', 'ソルト', '作成日時', '週の利率', '土日も数える'];
+// 連続ボーナス：バッジをとったときに時間貯金に入れる分数。'{"5":10,"10":20}' のようなJSON（空・0ならボーナスなし）
+const HEAD_FAMILY   = ['家庭ID', '家庭名', 'パスワードハッシュ', 'ソルト', '作成日時', '週の利率', '土日も数える', '連続ボーナス'];
 const HEAD_SESSION  = ['トークン', '家庭ID', '発行日時', '状態'];
 // 暗証番号：銀行タブ（ATM）のキャッシュカード用。1人ずつ。最初に使うときに本人が決める。
 // 暗証番号ミス：続けてまちがえた回数。ATM_MAX_MISS 回でロック（親がリセットするまで使えない）
@@ -1033,16 +1040,18 @@ const HEAD_PUSH_SUB  = ['登録ID', '家庭ID', 'メンバーID', 'スレッドI
 const SHEET_PUSH_MSG = '通知';
 const HEAD_PUSH_MSG  = ['通知ID', '日時', 'エンドポイント', 'タイトル', '本文', '開く場所', '受け取り日時'];
 const PUSH_ADMIN = '管理者';
+// 連続ボーナス。1行＝1人が1つのバッジでもらった分（1人1バッジ1回だけ）。秒は時間貯金（手元）に足す
+const HEAD_STREAK_BONUS = ['ボーナスID', '家庭ID', 'メンバーID', 'メンバー名', '日数', '秒', '付けた日時'];
 
 const ALL_SHEETS = [
   [SHEET_FAMILY, HEAD_FAMILY], [SHEET_SESSION, HEAD_SESSION], [SHEET_MEMBER, HEAD_MEMBER],
   [SHEET_ROUTINE, HEAD_ROUTINE], [SHEET_STEP, HEAD_STEP], [SHEET_REWARD, HEAD_REWARD],
   [SHEET_RUNLOG, HEAD_RUNLOG], [SHEET_EXCHANGE, HEAD_EXCHANGE], [SHEET_ERRORLOG, HEAD_ERRORLOG],
   [SHEET_FEEDBACK, HEAD_FEEDBACK], [SHEET_INTEREST, HEAD_INTEREST], [SHEET_BANK, HEAD_BANK],
-  [SHEET_PUSH_SUB, HEAD_PUSH_SUB], [SHEET_PUSH_MSG, HEAD_PUSH_MSG]
+  [SHEET_PUSH_SUB, HEAD_PUSH_SUB], [SHEET_PUSH_MSG, HEAD_PUSH_MSG], [SHEET_STREAK_BONUS, HEAD_STREAK_BONUS]
 ];
 // 見出しを変えたらこの番号を上げる → 次の呼び出しで自動的にシートが整う
-const SCHEMA_VERSION = '12';
+const SCHEMA_VERSION = '13';
 
 // ── 状態 ────────────────────────────────
 const ROLE_PARENT = '親';
@@ -1088,6 +1097,7 @@ const API_FUNCTIONS = {
   sendFeedback: sendFeedback, getFeedbackThread: getFeedbackThread, unsendFeedback: unsendFeedback,
   adminListThreads: adminListThreads, adminGetThread: adminGetThread, adminReply: adminReply,
   adminDeleteThread: adminDeleteThread, setInterestRate: setInterestRate, setStreakWeekends: setStreakWeekends,
+  setStreakBonus: setStreakBonus,
   bankDeposit: bankDeposit, bankWithdraw: bankWithdraw,
   setAtmPin: setAtmPin, verifyAtmPin: verifyAtmPin, resetAtmPin: resetAtmPin,
   pushSubscribe: pushSubscribe, pushUnsubscribe: pushUnsubscribe, pushTest: pushTest, getPushInbox: getPushInbox,
@@ -1527,6 +1537,9 @@ function getBalances_(familyId) {
     const sec = num_(r['利息秒']);
     if (sec) slot(r['メンバーID']).bankSec += sec;
   });
+  readFamily_(SHEET_STREAK_BONUS, familyId).forEach(function (r) {
+    slot(r['メンバーID']).balanceSec += num_(r['秒']);
+  });
   return out;
 }
 
@@ -1799,9 +1812,73 @@ function streaks_(familyId) {
       else if (d !== today && !(weekendOff && isWeekend_(d))) cur = 0;
       best = Math.max(best, cur);
     }
-    members[m.id] = { current: cur, best: best, today: !!days[today] };
+    members[m.id] = { current: cur, best: best, today: !!days[today], bonusDays: [] };
   });
-  return { weekendOff: weekendOff, badges: STREAK_BADGES, members: members };
+  readFamily_(SHEET_STREAK_BONUS, familyId).forEach(function (r) {
+    if (members[r['メンバーID']]) members[r['メンバーID']].bonusDays.push(num_(r['日数']));
+  });
+  return { weekendOff: weekendOff, badges: STREAK_BADGES, bonus: streakBonus_(familyRow_(familyId)), members: members };
+}
+
+/** バッジの日数 → ボーナスの分数（0は入れない） */
+function streakBonus_(family) {
+  let v = {};
+  try { v = JSON.parse(String((family && family['連続ボーナス']) || '{}')) || {}; } catch (e) { v = {}; }
+  const out = {};
+  STREAK_BADGES.forEach(function (n) {
+    const min = Math.floor(num_(v[n]));
+    if (min > 0) out[n] = min;
+  });
+  return out;
+}
+
+/** 最高記録がバッジの日数に届いていて、まだボーナスをもらっていない分を時間貯金に入れる。
+ *  あとから親がボーナスを決めた場合も、もうとっているバッジの分は入る。新しく入れた分 [{memberId, days, sec}] を返す */
+function creditStreakBonus_(familyId) {
+  function pending() {
+    const st = streaks_(familyId);
+    const todo = [];
+    Object.keys(st.members).forEach(function (id) {
+      const s = st.members[id];
+      STREAK_BADGES.forEach(function (n) {
+        if (st.bonus[n] && s.best >= n && s.bonusDays.indexOf(n) < 0) todo.push({ memberId: id, days: n, sec: st.bonus[n] * 60 });
+      });
+    });
+    return todo;
+  }
+  if (!pending().length) return [];
+  return withLock_(function () {
+    const todo = pending();   // ロックの中でもう一度（二重に入れない）
+    if (!todo.length) return [];
+    const names = {};
+    getMembers_(familyId).forEach(function (m) { names[m.id] = m.name; });
+    let n = num_(nextId_(SHEET_STREAK_BONUS, 'S').slice(1));
+    const now = nowStr_();
+    appendRows_(SHEET_STREAK_BONUS, HEAD_STREAK_BONUS, todo.map(function (t) {
+      return { 'ボーナスID': 'S' + ('00000' + n++).slice(-5), '家庭ID': familyId, 'メンバーID': t.memberId,
+               'メンバー名': names[t.memberId] || '', '日数': t.days, '秒': t.sec, '付けた日時': now };
+    }));
+    return todo;
+  });
+}
+
+/** 親がバッジごとのボーナス（分）を決める。args = {token, actorId, pin, bonus: {"5": 10, ...}} */
+function setStreakBonus(args) {
+  return guarded_('setStreakBonus', function (setFamily) {
+    const sess = session_(args && args.token, setFamily);
+    requireParentPin_(sess.familyId, args.actorId, args.pin);
+    const v = {};
+    STREAK_BADGES.forEach(function (n) {
+      const min = Math.floor(num_((args.bonus || {})[n]));
+      if (min < 0 || min > 600) throw new Error('ボーナスは0〜600分にしてください');
+      if (min) v[n] = min;
+    });
+    withLock_(function () {
+      updateRow_(SHEET_FAMILY, HEAD_FAMILY, familyRow_(sess.familyId)._row, { '連続ボーナス': JSON.stringify(v) });
+    });
+    creditStreakBonus_(sess.familyId);   // もうとっているバッジの分は、すぐ入れる
+    return { message: Object.keys(v).length ? '連続ボーナスを保存しました' : '連続ボーナスをなしにしました' };
+  });
 }
 
 function isWeekend_(dateStr) {
@@ -1831,6 +1908,7 @@ function getBootstrap(token) {
   return guarded_('getBootstrap', function (setFamily) {
     const sess = session_(token, setFamily);
     creditInterest_(sess.familyId);
+    creditStreakBonus_(sess.familyId);
     const pendingCount = readFamily_(SHEET_EXCHANGE, sess.familyId)
       .filter(function (r) { return r['状態'] === EX_PENDING; }).length;
     return {
@@ -1874,7 +1952,7 @@ function saveRun(args) {
     readFamily_(SHEET_STEP, sess.familyId).forEach(function (s) { stepNames[s['動作ID']] = s['動作名']; });
     const date = /^\d{4}-\d{2}-\d{2}$/.test(String(args.date || '')) ? args.date : todayStr_();
 
-    return withLock_(function () {
+    const dup = withLock_(function () {
       const dup = readFamily_(SHEET_RUNLOG, sess.familyId).some(function (r) { return r['実行ID'] === runId; });
       if (!dup) {
         let n = num_(nextId_(SHEET_RUNLOG, 'L').slice(1));
@@ -1894,8 +1972,11 @@ function saveRun(args) {
           };
         }));
       }
-      return { duplicated: dup, balances: getBalances_(sess.familyId), streak: streaks_(sess.familyId) };
+      return dup;
     });
+    // 連続が伸びてバッジに届いたら、ボーナスを入れる（ロックの外で。中でもう一度ロックをとる）
+    const bonus = creditStreakBonus_(sess.familyId);
+    return { duplicated: dup, balances: getBalances_(sess.familyId), streak: streaks_(sess.familyId), bonus: bonus };
   });
 }
 
@@ -3154,8 +3235,17 @@ function renderStreak_(){
       '<div class="streak-num"><b>' + st.current + '</b>日連続</div>' +
       '<div class="muted">' + msg + (st.best ? '・最高 ' + st.best + '日' : '') + (S.streak.weekendOff ? '・土日はお休み' : '') + '</div></div></div>' +
     '<div class="badges">' + S.streak.badges.map(function(n){
-      return '<span class="streak-badge' + (st.best >= n ? ' got' : '') + '" title="' + n + '日連続">🏅' + n + '</span>';
-    }).join('') + '</div>';
+      const bonus = (S.streak.bonus || {})[n];
+      return '<span class="streak-badge' + (st.best >= n ? ' got' : '') + '" title="' + n + '日連続' + (bonus ? '・ボーナス' + bonus + '分' : '') + '">🏅' + n + '</span>';
+    }).join('') + '</div>' + nextBadgeText_(st);
+}
+
+/** 次にとれるバッジ（ボーナスがあれば分数も） */
+function nextBadgeText_(st){
+  const next = S.streak.badges.filter(function(n){ return n > st.best; })[0];
+  if (!next) return '';
+  const bonus = (S.streak.bonus || {})[next];
+  return '<div class="muted streak-next">次のバッジ：' + next + '日（あと ' + (next - st.current) + '日）' + (bonus ? '　🎁 +' + bonus + '分' : '') + '</div>';
 }
 
 function myRoutines_(){
@@ -3649,12 +3739,20 @@ function finishRun_(quit){
     const el = document.getElementById('sendState');
     if (!el) return;
     el.textContent = load_('rt_outbox', []).length ? '📡 圏外のため、つながったら自動で保存します' : '✅ 保存しました';
-    // 連続が伸びたらお祝い（バッジの日数ちょうどならバッジも）
+    // 連続が伸びたらお祝い（バッジの日数ちょうどならバッジも。ボーナスが入ったらそれも）
     const now = streakOf_(memberId).current;
-    if (quit || now <= before) return;
-    const badge = S.streak.badges.indexOf(now) >= 0;
-    document.getElementById('doneStreak').innerHTML = '🔥 <b>' + now + '日連続！</b>' + (badge ? '<div class="got-badge">🏅 ' + now + '日バッジ ゲット！</div>' : '');
-    setTimeout(function(){ speak(now + '日連続' + (badge ? '。' + now + '日バッジ、ゲット！' : '！')); }, 2500);
+    const bonusSec = (S.newBonus || []).filter(function(b){ return b.memberId === memberId; })
+      .reduce(function(sum, b){ return sum + b.sec; }, 0);
+    S.newBonus = (S.newBonus || []).filter(function(b){ return b.memberId !== memberId; });
+    if (quit || (now <= before && !bonusSec)) return;
+    const badge = now > before && S.streak.badges.indexOf(now) >= 0;
+    document.getElementById('doneStreak').innerHTML = (now > before ? '🔥 <b>' + now + '日連続！</b>' : '') +
+      (badge ? '<div class="got-badge">🏅 ' + now + '日バッジ ゲット！</div>' : '') +
+      (bonusSec ? '<div class="got-badge">🎁 ボーナス ' + fmtDur(bonusSec) + ' が貯金に入ったよ</div>' : '');
+    setTimeout(function(){
+      speak((now > before ? now + '日連続' + (badge ? '。' + now + '日バッジ、ゲット！' : '！') : '') +
+        (bonusSec ? 'ボーナス、' + speakDur_(bonusSec) + '。' : ''));
+    }, 2500);
   });
 }
 
@@ -3681,6 +3779,7 @@ async function flushOutbox(){
         const res = await gs('saveRun', Object.assign({ token: S.token }, p));
         S.balances = res.balances;
         if (res.streak) S.streak = res.streak;
+        if (res.bonus && res.bonus.length) S.newBonus = (S.newBonus || []).concat(res.bonus);
       }catch(err){
         if (err.network) break;
         toastErr(new Error('記録を保存できませんでした：' + errText(err)));
@@ -4393,7 +4492,12 @@ function renderSettings(){
 
     html += '<div class="card"><h2>🔥 連続記録</h2><p class="muted">ルーチンを1つでも最後までやった日が続くと、連続が伸びます。やらなかった日があると0に戻ります。</p>' +
       '<div class="form"><label class="inline"><input type="checkbox" id="stWeekendOff"' + (S.streak.weekendOff ? ' checked' : '') + '> 土日はお休み（土日にやらなくても連続が切れない）</label></div>' +
-      '<button class="btn primary" onclick="saveStreakWeekends()">保存</button></div>';
+      '<button class="btn primary" onclick="saveStreakWeekends()">保存</button>' +
+      '<h3>🎁 バッジのボーナス</h3><p class="muted">バッジをとったときに、時間貯金に入れる分です（1人1バッジ1回だけ）。0ならボーナスなし。もうとっているバッジの分も、保存するとすぐ入ります。</p>' +
+      '<div class="bonus-grid">' + S.streak.badges.map(function(n){
+        return '<label>🏅' + n + '日<span><input type="number" id="sb_' + n + '" min="0" max="600" inputmode="numeric" value="' + ((S.streak.bonus || {})[n] || 0) + '">分</span></label>';
+      }).join('') + '</div>' +
+      '<button class="btn primary" onclick="saveStreakBonus()">ボーナスを保存</button></div>';
 
     html += '<div class="card"><h2>家庭のパスワード</h2><button class="btn" onclick="changePassword()">パスワードを変える</button></div>';
   }
@@ -4952,6 +5056,12 @@ function saveInterestRate(){
 
 function saveStreakWeekends(){
   saveSetting_('setStreakWeekends', { weekendOff: document.getElementById('stWeekendOff').checked }).catch(function(){});
+}
+
+function saveStreakBonus(){
+  const bonus = {};
+  S.streak.badges.forEach(function(n){ bonus[n] = Number(val('sb_' + n)) || 0; });
+  saveSetting_('setStreakBonus', { bonus: bonus }).catch(function(){});
 }
 
 function changePassword(){

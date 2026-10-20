@@ -161,6 +161,11 @@ main{padding:12px 12px 90px; max-width:900px; margin:0 auto;}
 .streak-badge.got{background:#fff3d6; color:#9a6200; filter:none; opacity:1;}
 .done-streak{font-size:20px; margin:10px 0 4px; color:#ffd36b;}
 .done-streak .got-badge{font-size:16px; margin-top:4px;}
+.streak-next{margin-top:6px;}
+.bonus-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; margin:8px 0 12px;}
+.bonus-grid label{display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:13.5px; font-weight:700;}
+.bonus-grid label span{display:flex; align-items:center; gap:4px; font-weight:400;}
+.bonus-grid input{width:64px;}
 .bank-mini.ginko{background:linear-gradient(135deg, #2f5d8a, #1d3f63);}
 
 /* 銀行タブ（ATM）*/
@@ -1040,8 +1045,17 @@ function renderStreak_(){
       '<div class="streak-num"><b>' + st.current + '</b>日連続</div>' +
       '<div class="muted">' + msg + (st.best ? '・最高 ' + st.best + '日' : '') + (S.streak.weekendOff ? '・土日はお休み' : '') + '</div></div></div>' +
     '<div class="badges">' + S.streak.badges.map(function(n){
-      return '<span class="streak-badge' + (st.best >= n ? ' got' : '') + '" title="' + n + '日連続">🏅' + n + '</span>';
-    }).join('') + '</div>';
+      const bonus = (S.streak.bonus || {})[n];
+      return '<span class="streak-badge' + (st.best >= n ? ' got' : '') + '" title="' + n + '日連続' + (bonus ? '・ボーナス' + bonus + '分' : '') + '">🏅' + n + '</span>';
+    }).join('') + '</div>' + nextBadgeText_(st);
+}
+
+/** 次にとれるバッジ（ボーナスがあれば分数も） */
+function nextBadgeText_(st){
+  const next = S.streak.badges.filter(function(n){ return n > st.best; })[0];
+  if (!next) return '';
+  const bonus = (S.streak.bonus || {})[next];
+  return '<div class="muted streak-next">次のバッジ：' + next + '日（あと ' + (next - st.current) + '日）' + (bonus ? '　🎁 +' + bonus + '分' : '') + '</div>';
 }
 
 function myRoutines_(){
@@ -1535,12 +1549,20 @@ function finishRun_(quit){
     const el = document.getElementById('sendState');
     if (!el) return;
     el.textContent = load_('rt_outbox', []).length ? '📡 圏外のため、つながったら自動で保存します' : '✅ 保存しました';
-    // 連続が伸びたらお祝い（バッジの日数ちょうどならバッジも）
+    // 連続が伸びたらお祝い（バッジの日数ちょうどならバッジも。ボーナスが入ったらそれも）
     const now = streakOf_(memberId).current;
-    if (quit || now <= before) return;
-    const badge = S.streak.badges.indexOf(now) >= 0;
-    document.getElementById('doneStreak').innerHTML = '🔥 <b>' + now + '日連続！</b>' + (badge ? '<div class="got-badge">🏅 ' + now + '日バッジ ゲット！</div>' : '');
-    setTimeout(function(){ speak(now + '日連続' + (badge ? '。' + now + '日バッジ、ゲット！' : '！')); }, 2500);
+    const bonusSec = (S.newBonus || []).filter(function(b){ return b.memberId === memberId; })
+      .reduce(function(sum, b){ return sum + b.sec; }, 0);
+    S.newBonus = (S.newBonus || []).filter(function(b){ return b.memberId !== memberId; });
+    if (quit || (now <= before && !bonusSec)) return;
+    const badge = now > before && S.streak.badges.indexOf(now) >= 0;
+    document.getElementById('doneStreak').innerHTML = (now > before ? '🔥 <b>' + now + '日連続！</b>' : '') +
+      (badge ? '<div class="got-badge">🏅 ' + now + '日バッジ ゲット！</div>' : '') +
+      (bonusSec ? '<div class="got-badge">🎁 ボーナス ' + fmtDur(bonusSec) + ' が貯金に入ったよ</div>' : '');
+    setTimeout(function(){
+      speak((now > before ? now + '日連続' + (badge ? '。' + now + '日バッジ、ゲット！' : '！') : '') +
+        (bonusSec ? 'ボーナス、' + speakDur_(bonusSec) + '。' : ''));
+    }, 2500);
   });
 }
 
@@ -1567,6 +1589,7 @@ async function flushOutbox(){
         const res = await gs('saveRun', Object.assign({ token: S.token }, p));
         S.balances = res.balances;
         if (res.streak) S.streak = res.streak;
+        if (res.bonus && res.bonus.length) S.newBonus = (S.newBonus || []).concat(res.bonus);
       }catch(err){
         if (err.network) break;
         toastErr(new Error('記録を保存できませんでした：' + errText(err)));
@@ -2279,7 +2302,12 @@ function renderSettings(){
 
     html += '<div class="card"><h2>🔥 連続記録</h2><p class="muted">ルーチンを1つでも最後までやった日が続くと、連続が伸びます。やらなかった日があると0に戻ります。</p>' +
       '<div class="form"><label class="inline"><input type="checkbox" id="stWeekendOff"' + (S.streak.weekendOff ? ' checked' : '') + '> 土日はお休み（土日にやらなくても連続が切れない）</label></div>' +
-      '<button class="btn primary" onclick="saveStreakWeekends()">保存</button></div>';
+      '<button class="btn primary" onclick="saveStreakWeekends()">保存</button>' +
+      '<h3>🎁 バッジのボーナス</h3><p class="muted">バッジをとったときに、時間貯金に入れる分です（1人1バッジ1回だけ）。0ならボーナスなし。もうとっているバッジの分も、保存するとすぐ入ります。</p>' +
+      '<div class="bonus-grid">' + S.streak.badges.map(function(n){
+        return '<label>🏅' + n + '日<span><input type="number" id="sb_' + n + '" min="0" max="600" inputmode="numeric" value="' + ((S.streak.bonus || {})[n] || 0) + '">分</span></label>';
+      }).join('') + '</div>' +
+      '<button class="btn primary" onclick="saveStreakBonus()">ボーナスを保存</button></div>';
 
     html += '<div class="card"><h2>家庭のパスワード</h2><button class="btn" onclick="changePassword()">パスワードを変える</button></div>';
   }
@@ -2838,6 +2866,12 @@ function saveInterestRate(){
 
 function saveStreakWeekends(){
   saveSetting_('setStreakWeekends', { weekendOff: document.getElementById('stWeekendOff').checked }).catch(function(){});
+}
+
+function saveStreakBonus(){
+  const bonus = {};
+  S.streak.badges.forEach(function(n){ bonus[n] = Number(val('sb_' + n)) || 0; });
+  saveSetting_('setStreakBonus', { bonus: bonus }).catch(function(){});
 }
 
 function changePassword(){
