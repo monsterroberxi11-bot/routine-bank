@@ -149,6 +149,18 @@ main{padding:12px 12px 90px; max-width:900px; margin:0 auto;}
 .bank-mini .side b{font-variant-numeric:tabular-nums;}
 .stat-row{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px;}
 .stat-row.two{grid-template-columns:repeat(2,1fr);}
+/* 連続記録 */
+.streak-card{padding:12px 16px;}
+.streak-main{display:flex; align-items:center; gap:12px;}
+.streak-main .fire{font-size:34px; line-height:1;}
+.streak-main .fire.off{filter:grayscale(1); opacity:.4;}
+.streak-num{font-size:14px; font-weight:700;}
+.streak-num b{font-size:26px; font-variant-numeric:tabular-nums; color:var(--warn);}
+.badges{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;}
+.streak-badge{font-size:12.5px; font-weight:700; padding:3px 8px; border-radius:999px; background:var(--line); color:var(--muted); filter:grayscale(1); opacity:.6;}
+.streak-badge.got{background:#fff3d6; color:#9a6200; filter:none; opacity:1;}
+.done-streak{font-size:20px; margin:10px 0 4px; color:#ffd36b;}
+.done-streak .got-badge{font-size:16px; margin-top:4px;}
 .bank-mini.ginko{background:linear-gradient(135deg, #2f5d8a, #1d3f63);}
 
 /* 銀行タブ（ATM）*/
@@ -555,6 +567,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--primary); outlin
   <!-- タイマー -->
   <section id="view-timer" class="view">
     <div class="bank-mini" id="bankMini"></div>
+    <div class="card streak-card" id="streakCard"></div>
     <div class="card">
       <div class="card-head">
         <h2>ルーチンをえらぶ</h2>
@@ -881,6 +894,7 @@ async function loadBootstrap(){
   S.rewards = b.rewards;
   S.balances = b.balances;
   S.interest = b.interest || { rate: 0, preview: {}, history: [] };
+  S.streak = b.streak || { weekendOff: true, badges: [], members: {} };
   S.pendingCount = b.pendingCount;
   S.today = b.today;
 }
@@ -997,6 +1011,7 @@ function renderTimerView(){
     '<div><div class="label">' + esc(member_(S.me).name) + 'の時間貯金</div><div class="val">' + fmtDur(b.balanceSec) + '</div></div>' +
     '<div class="side">今週 <b>' + fmtSigned(b.weekSec) + '</b><br>今月 <b>' + fmtSigned(b.monthSec) + '</b>' +
     (b.bankSec ? '<br>🏦 銀行 <b>' + fmtDur(b.bankSec) + '</b>' : '') + '</div>';
+  renderStreak_();
 
   const list = myRoutines_();
   document.getElementById('routineList').innerHTML = list.map(function(r){
@@ -1011,6 +1026,22 @@ function renderTimerView(){
   document.getElementById('routineList').insertAdjacentHTML('beforeend',
     '<button class="btn block" onclick="editRoutine(\'\')">＋ ルーチンを作る</button>');
   renderOutbox();
+}
+
+function streakOf_(id){ return S.streak.members[id] || { current: 0, best: 0, today: false }; }
+
+/** 連続記録のカード。今日まだなら「今日やると◯日連続」、バッジは最高記録までのぶんが光る */
+function renderStreak_(){
+  const st = streakOf_(S.me);
+  const msg = st.today ? '✅ 今日はもうやったよ'
+    : st.current ? '今日やると ' + (st.current + 1) + '日連続！' : 'ルーチンを最後までやると1日目！';
+  document.getElementById('streakCard').innerHTML =
+    '<div class="streak-main"><span class="fire' + (st.current ? '' : ' off') + '">🔥</span><div>' +
+      '<div class="streak-num"><b>' + st.current + '</b>日連続</div>' +
+      '<div class="muted">' + msg + (st.best ? '・最高 ' + st.best + '日' : '') + (S.streak.weekendOff ? '・土日はお休み' : '') + '</div></div></div>' +
+    '<div class="badges">' + S.streak.badges.map(function(n){
+      return '<span class="streak-badge' + (st.best >= n ? ' got' : '') + '" title="' + n + '日連続">🏅' + n + '</span>';
+    }).join('') + '</div>';
 }
 
 function myRoutines_(){
@@ -1469,8 +1500,10 @@ function quitRun(){
 function finishRun_(quit){
   stopTimers_();
   const saved = R.results.reduce(function(sum, x){ return sum + (x.targetSec - x.actualSec); }, 0);
+  const memberId = R.memberId;
+  const before = streakOf_(memberId).current;
   const payload = {
-    runId: R.runId, memberId: R.memberId, routineId: R.routineId, date: R.date,
+    runId: R.runId, memberId: R.memberId, routineId: R.routineId, date: R.date, completed: !quit,
     results: R.results.map(function(x){
       return { stepId: x.stepId, name: x.name, targetSec: x.targetSec, actualSec: x.actualSec, reason: x.reason, showRemaining: x.showRemaining };
     })
@@ -1492,6 +1525,7 @@ function finishRun_(quit){
       return '<div class="row"><span>' + esc(x.name) + (x.reason ? '<div class="reason">理由：' + esc(x.reason) + '</div>' : '') +
         '</span><span class="num">' + fmtClock(x.actualSec) + ' <span class="' + (d < 0 ? 'minus' : 'plus') + '">' + fmtSigned(d) + '</span></span></div>';
     }).join('') + '</div>' +
+    '<div class="done-streak" id="doneStreak"></div>' +
     '<p class="muted" id="sendState" style="color:#cfe">保存しています…</p>' +
     '<button class="run-next" onclick="closeRun_()">とじる</button>';
   R = null;
@@ -1501,6 +1535,12 @@ function finishRun_(quit){
     const el = document.getElementById('sendState');
     if (!el) return;
     el.textContent = load_('rt_outbox', []).length ? '📡 圏外のため、つながったら自動で保存します' : '✅ 保存しました';
+    // 連続が伸びたらお祝い（バッジの日数ちょうどならバッジも）
+    const now = streakOf_(memberId).current;
+    if (quit || now <= before) return;
+    const badge = S.streak.badges.indexOf(now) >= 0;
+    document.getElementById('doneStreak').innerHTML = '🔥 <b>' + now + '日連続！</b>' + (badge ? '<div class="got-badge">🏅 ' + now + '日バッジ ゲット！</div>' : '');
+    setTimeout(function(){ speak(now + '日連続' + (badge ? '。' + now + '日バッジ、ゲット！' : '！')); }, 2500);
   });
 }
 
@@ -1526,6 +1566,7 @@ async function flushOutbox(){
       try{
         const res = await gs('saveRun', Object.assign({ token: S.token }, p));
         S.balances = res.balances;
+        if (res.streak) S.streak = res.streak;
       }catch(err){
         if (err.network) break;
         toastErr(new Error('記録を保存できませんでした：' + errText(err)));
@@ -2236,6 +2277,10 @@ function renderSettings(){
       '<div class="form"><label>週の利率（％）<input type="number" id="irRate" min="0" max="10" step="0.1" inputmode="decimal" value="' + S.interest.rate + '"></label></div>' +
       '<button class="btn primary" onclick="saveInterestRate()">保存</button></div>';
 
+    html += '<div class="card"><h2>🔥 連続記録</h2><p class="muted">ルーチンを1つでも最後までやった日が続くと、連続が伸びます。やらなかった日があると0に戻ります。</p>' +
+      '<div class="form"><label class="inline"><input type="checkbox" id="stWeekendOff"' + (S.streak.weekendOff ? ' checked' : '') + '> 土日はお休み（土日にやらなくても連続が切れない）</label></div>' +
+      '<button class="btn primary" onclick="saveStreakWeekends()">保存</button></div>';
+
     html += '<div class="card"><h2>家庭のパスワード</h2><button class="btn" onclick="changePassword()">パスワードを変える</button></div>';
   }
   document.getElementById('settings').innerHTML = html;
@@ -2789,6 +2834,10 @@ function resetAtmPin(id){
 
 function saveInterestRate(){
   saveSetting_('setInterestRate', { rate: Number(val('irRate')) }).catch(function(){});
+}
+
+function saveStreakWeekends(){
+  saveSetting_('setStreakWeekends', { weekendOff: document.getElementById('stWeekendOff').checked }).catch(function(){});
 }
 
 function changePassword(){
